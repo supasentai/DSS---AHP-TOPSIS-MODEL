@@ -1,0 +1,79 @@
+{
+  "ward": {
+    "display_name": "Tên phường",
+    "unit": "",
+    "type": "id",
+    "description": "Đơn vị hành chính cấp phường trong quận.",
+    "source": "Danh sách phường Quận 7"
+  },
+  "ward_id": {
+    "display_name": "Mã phường",
+    "unit": "",
+    "type": "id",
+    "description": "ID nội bộ dùng để join / merge dữ liệu và geojson.",
+    "source": "Gán bởi nhóm dự án"
+  },
+  "population_density": {
+    "display_name": "Mật độ dân cư",
+    "unit": "người/km²",
+    "type": "benefit",
+    "description": "Mức độ tập trung dân cư tại phường. Mật độ cao → nhiều khách tiềm năng xung quanh điểm đặt chi nhánh.",
+    "source": "Giả lập từ ước lượng dân số / diện tích"
+  },
+  "population_growth": {
+    "display_name": "Tốc độ tăng trưởng dân số",
+    "unit": "% tăng trưởng / năm (hoặc thang điểm ~2.5-4.5)",
+    "type": "benefit",
+    "description": "Tốc độ gia tăng dân số cơ học (người nhập cư) và tự nhiên. Tăng trưởng cao cho thấy khu vực đang thu hút dân cư, hứa hẹn gia tăng nhu cầu trong tương lai.",
+    "source": "Giả lập từ tốc độ lấp đầy các dự án chung cư mới, xu hướng dịch chuyển dân cư."
+  },
+  "GDP": {
+    "display_name": "Quy mô kinh tế địa phương",
+    "unit": "tỷ VND/năm (ví dụ 1200–2800)",
+    "type": "benefit",
+    "description": "Sức nặng kinh tế tổng thể của phường (quy mô giao dịch, hoạt động kinh doanh hiện hữu). Cao → thị trường lớn hiện tại.",
+    "source": "Ước lượng quy mô kinh tế tương đối giữa các phường"
+  },
+  "rental_cost": {
+    "display_name": "Giá thuê mặt bằng",
+    "unit": "triệu VND / m² / tháng",
+    "type": "cost",
+    "description": "Chi phí thuê địa điểm kinh doanh/ kho / nhà xưởng. Càng thấp càng tốt cho chi phí ban đầu và chi phí vận hành.",
+    "source": "Giả lập dựa trên mức sang trọng / trung tâm của phường"
+  },
+  "accessibility_distance": {
+    "display_name": "Khoảng cách tới trục giao thông / trung tâm hoạt động",
+    "unit": "km",
+    "type": "cost",
+    "description": "Khoảng cách tới các nút quan trọng (trung tâm thương mại lớn, trục Nguyễn Văn Linh, cầu Kênh Tẻ...). Càng gần càng thuận tiện tiếp cận khách / vận chuyển.",
+    "source": "Ước lượng địa lý nội bộ nhóm"
+  },
+  "infrastructure_quality": {
+    "display_name": "Chất lượng hạ tầng",
+    "unit": "thang điểm 1–10",
+    "type": "benefit",
+    "description": "Mức độ hoàn thiện đường xá, điện nước, khả năng xe tải ra/vào, tình trạng ngập. Cao → dễ vận hành, ít rủi ro kỹ thuật.",
+    "source": "Đánh giá chủ quan của nhóm dự án dựa trên quan sát thực địa / kiến thức địa phương"
+  },
+  "amenity_score": {
+    "display_name": "Tiện ích xung quanh",
+    "unit": "thang điểm 1–10",
+    "type": "benefit",
+    "description": "Mức độ sẵn có của tiện ích hỗ trợ (TTTM, trường học, bệnh viện, ngân hàng, khu dân cư cao cấp). Cao → phù hợp văn phòng / dịch vụ khách hàng.",
+    "source": "Đánh giá chủ quan kết hợp đếm POI (Points of Interest)"
+  },
+  "safety_score": {
+    "display_name": "An ninh khu vực",
+    "unit": "thang điểm 1–10",
+    "type": "benefit",
+    "description": "Mức độ an toàn và ổn định xã hội. Cao → ít rủi ro trộm cắp, hình ảnh thương hiệu tốt hơn.",
+    "source": "Đánh giá chủ quan từ cảm nhận dân cư khu vực"
+  },
+  "competition_pressure": {
+    "display_name": "Áp lực cạnh tranh",
+    "unit": "số lượng đối thủ tương tự / mức độ dày đặc thị trường",
+    "type": "cost",
+    "description": "Mức độ hiện diện đối thủ trong cùng phân khúc. Cao → thị trường đã bão hòa, khó tạo khác biệt.",
+    "source": "Đếm thủ công (Google Maps, khảo sát)"
+  }
+}
