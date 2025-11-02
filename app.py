@@ -15,7 +15,7 @@ try:
     from sensitivity_module import run_what_if_analysis
 except ImportError as e:
     st.error(
-        f"Lỗi import module: {e}. Vui lòng đảm bảo các file `ahp_module.py`, `topsis_module.py`, và `sensitivity_module.py` nằm cùng thư mục.")
+        f"Lỗi import module: {e}. Vui lòng đảm bảo các fil `ahp_module.py`, `topsis_module.py`, và `sensitivity_module.py` nằm cùng thư mục.")
     st.stop()
 
 # --- Cấu hình trang ---
