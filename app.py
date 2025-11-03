@@ -110,7 +110,7 @@ def display_table(df, bold_first_col=True, fixed_height=420, header_tooltips=Non
 
 def load_metadata():
     try:
-        with open("metadata.json", "r", encoding="utf-8-sig") as f:
+        with open("data/metadata.json", "r", encoding="utf-8-sig") as f:
             return json.load(f)
     except Exception:
         return {}
@@ -140,7 +140,7 @@ def show_home_summary():
     colA, colB = st.columns([2, 3])
     with colA:
         try:
-            df = pd.read_excel("AHP_Data_synced_fixed.xlsx")
+            df = pd.read_excel("data/AHP_Data_synced_fixed.xlsx")
             metadata = load_metadata()
             n_ward = int(df["ward"].nunique()) if "ward" in df.columns else len(df)
             crits = [c for c in df.columns if c not in ("ward","ward_id")]
@@ -157,7 +157,7 @@ def show_home_summary():
         last_weights = st.session_state.get("last_saved_weights")
         if not last_weights and last_model:
             try:
-                with open("weights.yaml","r",encoding="utf-8") as f:
+                with open("data/weights.yaml","r",encoding="utf-8") as f:
                     yw = yaml.safe_load(f) or {}
                 last_weights = yw.get(last_model)
             except Exception:
@@ -322,7 +322,7 @@ elif page == "Tổng quan Dữ liệu":
     st.header("Trang 2: Khám phá và Tổng quan Dữ liệu")
 
     try:
-        df = pd.read_excel("AHP_Data_synced_fixed.xlsx")
+        df = pd.read_excel("data/AHP_Data_synced_fixed.xlsx")
         metadata = load_metadata()
     except FileNotFoundError:
         st.error("Thiếu `AHP_Data_synced_fixed.xlsx` hoặc `metadata.json`.")
@@ -400,7 +400,7 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
     st.header("Trang 3: Tạo và Cập nhật Trọng số Mô hình")
 
     all_weights = {}
-    weights_file = "weights.yaml"
+    weights_file = "data/weights.yaml"
     if os.path.exists(weights_file):
         try:
             with open(weights_file, 'r', encoding='utf-8') as f:
@@ -441,7 +441,7 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
     def show_customization_tabs(all_weights_passed_in, model_name_placeholder=""):
         metadata = load_metadata()
         try:
-            df_data = pd.read_excel("AHP_Data_synced_fixed.xlsx")
+            df_data = pd.read_excel("data/AHP_Data_synced_fixed.xlsx")
             full_criteria_list = [col for col in df_data.columns if col not in ['ward', 'ward_id']]
         except FileNotFoundError:
             st.error("Thiếu file dữ liệu.")
@@ -647,7 +647,7 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
     st.header("Trang 4: Xếp hạng Địa điểm TOPSIS")
 
     try:
-        with open("weights.yaml", 'r', encoding='utf-8') as f:
+        with open("data/weights.yaml", 'r', encoding='utf-8') as f:
             all_weights = yaml.safe_load(f) or {}
             model_names = list(all_weights.keys())
             if not model_names:
@@ -681,8 +681,8 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
     def run_and_display_topsis(model_name):
         st.session_state['last_topsis_model'] = model_name
         report_df = run_topsis_model(
-            data_path="AHP_Data_synced_fixed.xlsx",
-            json_path="metadata.json",
+            data_path="data/AHP_Data_synced_fixed.xlsx",
+            json_path="data/metadata.json",
             analysis_type=model_name,
             all_criteria_weights=all_weights
         )
@@ -722,7 +722,7 @@ elif page == "Phân tích Độ nhạy (What-if)":
     st.header("Trang 5: Phân tích Độ nhạy (What-if)")
 
     try:
-        with open("weights.yaml", 'r', encoding='utf-8') as f:
+        with open("data/weights.yaml", 'r', encoding='utf-8') as f:
             all_weights = yaml.safe_load(f) or {}
             model_names = list(all_weights.keys())
             if not model_names:
@@ -750,7 +750,7 @@ elif page == "Phân tích Độ nhạy (What-if)":
 
         new_weights_dict = {}
         try:
-            df_data = pd.read_excel("AHP_Data_synced_fixed.xlsx")
+            df_data = pd.read_excel("data/AHP_Data_synced_fixed.xlsx")
             full_criteria_list = [c for c in df_data.columns if c not in ["ward", "ward_id"]]
         except FileNotFoundError:
             st.error("Thiếu dữ liệu.")
@@ -850,8 +850,8 @@ elif page == "Map View":
 
     st.success(f"Kết quả cho mô hình: **{model_to_map}**")
 
-    geojson_file = "quan7_geojson.json"
-    ranking_file = f"ranking_result_{model_to_map}.xlsx"
+    geojson_file = "data/quan7_geojson.json"
+    ranking_file = f"data/ranking_result_{model_to_map}.xlsx"
 
     try:
         with open(geojson_file, 'r', encoding='utf-8') as f:

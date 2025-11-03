@@ -51,7 +51,7 @@ def calculate_ahp_weights(matrix):
     return weights, cr
 
 
-def save_weights_to_yaml(weights_dict, model_name, filename="weights.yaml"):
+def save_weights_to_yaml(weights_dict, model_name, filename="data/weights.yaml"):
     """
     Cập nhật (thêm hoặc ghi đè) một mô hình trọng số vào file YAML
     mà không làm mất các mô hình khác.

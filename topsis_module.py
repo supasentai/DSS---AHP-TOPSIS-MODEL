@@ -89,7 +89,7 @@ def run_topsis_model(data_path, json_path, analysis_type, all_criteria_weights):
     # --- CẬP NHẬT MỚI: LƯU KẾT QUẢ RA FILE ---
     # Chỉ lưu file nếu tên mô hình không phải là tên tạm thời (what-if)
     if "temp" not in analysis_type:
-        output_filename = f"ranking_result_{analysis_type}.xlsx"
+        output_filename = f"data/ranking_result_{analysis_type}.xlsx"
         try:
             # Dùng utf-8-sig để Excel đọc CSV tiếng Việt không bị lỗi
             report_df.to_excel(output_filename)

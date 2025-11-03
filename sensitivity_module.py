@@ -4,9 +4,9 @@ import os
 from topsis_module import run_topsis_model # Import hàm TOPSIS
 
 # --- CẤU HÌNH ĐƯỜNG DẪN ---
-EX_PATH = "AHP_Data_synced_fixed.xlsx"
-JSON_PATH = "metadata.json"
-CRITERIA_WEIGHTS_PATH = "weights.yaml"
+EX_PATH = "data/AHP_Data_synced_fixed.xlsx"
+JSON_PATH = "data/metadata.json"
+CRITERIA_WEIGHTS_PATH = "data/weights.yaml"
 
 def load_original_ranking(model_name):
     """
