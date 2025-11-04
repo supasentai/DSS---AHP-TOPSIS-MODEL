@@ -1,13 +1,34 @@
 # app.py (UI polish + Homepage Summary)
 import streamlit as st
+from pathlib import Path
+
+
+# === PATH NORMALIZATION ===
+ROOT = Path(__file__).resolve().parent
+DATA_DIR = ROOT / "data"
+
+def F(name: str) -> str:
+    """Return absolute path under ./data for reading (fallback to root if missing)."""
+    p = DATA_DIR / name
+    if p.exists():
+        return str(p)
+    q = ROOT / name
+    return str(p if p.exists() else q)
+
+def FW(name: str) -> str:
+    """Return absolute path under ./data for writing; ensure parents exist."""
+    p = DATA_DIR / name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    return str(p)
 import pandas as pd
+import re
+from html import escape as _esc
 import numpy as np
 import yaml
 import os
 import json
 import altair as alt
 import pydeck as pdk
-import re
 
 # --- Import các module chức năng ---
 try:
@@ -51,7 +72,41 @@ def inject_global_css():
           .styled-table tbody td{background:#0B1220!important;color:#E5E7EB!important;border:4px solid #94A3B8!important}
           .styled-table tbody td:first-child{background:#0E1A2B!important;color:#F8FAFC!important}  /* left col = header */
         }
-        </style>
+        
+/* Tooltip header-only */
+.styled-table th[data-tip]{ position:relative; overflow:visible; }
+.styled-table th[data-tip]:hover::before{
+  content:"";
+  position:absolute;
+  left:50%; top:calc(100% + 2px);
+  transform:translateX(-50%);
+  border:6px solid transparent;
+  border-bottom-color: rgba(15,15,20,.98);
+  z-index:99998; pointer-events:none;
+}
+.styled-table th[data-tip]:hover::after{
+  content: attr(data-tip);
+  position:absolute;
+  left:50%; top:calc(100% + 14px);
+  transform:translateX(-50%);
+  z-index:99999; background: rgba(15,15,20,.98); color:#fff;
+  padding:12px 14px; border-radius:10px; border:1px solid rgba(255,255,255,.12);
+  display:block; width:max-content; min-width:16ch; max-width:min(68ch, 80vw);
+  white-space:normal; word-break:normal; overflow-wrap:break-word;
+  line-height:1.35rem; font-size:.95rem; box-shadow:0 10px 26px rgba(0,0,0,.40);
+  pointer-events:none;
+}
+/* Disable tooltips in data cells */
+.styled-table td[data-tip],
+.styled-table td [data-tip]{ position:static; }
+.styled-table td[data-tip]::before,
+.styled-table td[data-tip]::after,
+.styled-table td [data-tip]::before,
+.styled-table td [data-tip]::after{
+  content:none !important; display:none !important;
+}
+
+</style>
         """,
         unsafe_allow_html=True
     )
@@ -95,22 +150,56 @@ def to_html_table(df: pd.DataFrame, bold_first_col: bool = True) -> str:
         df2[first] = df2[first].map(lambda x: f"<strong>{x}</strong>")
     return df2.to_html(index=False, escape=False, classes="styled-table")
 
+def _inject_tooltips_on_th(html_table: str, header_tooltips: dict) -> str:
+    if not header_tooltips:
+        return html_table
+    m = re.search(r'<thead[^>]*>.*?<tr[^>]*>(.*?)</tr>.*?</thead>', html_table, flags=re.S|re.I)
+    if not m:
+        return html_table
+    head_row = m.group(1)
+    ths = list(re.finditer(r'<th\b[^>]*>(.*?)</th>', head_row, flags=re.S|re.I))
+
+    def _norm(s: str) -> str:
+        s = re.sub(r'<[^>]+>', '', str(s))
+        return re.sub(r'\\s+', ' ', s).strip().lower()
+
+    tips = { _norm(k): v for k, v in header_tooltips.items() }
+    new_cells = []
+    for thm in ths:
+        cell  = thm.group(0)
+        label = _norm(thm.group(1))
+        tip   = tips.get(label)
+        if tip and 'data-tip=' not in cell:
+            esc = _esc(str(tip), quote=True)
+            cell = re.sub(r'(<th\b[^>]*)>', '\\1 data-tip="' + esc + '">', cell, flags=re.I)
+        new_cells.append(cell)
+    new_head = ''.join(new_cells)
+    return html_table[:m.start(1)] + new_head + html_table[m.end(1):]
+
+
 def display_table(df, bold_first_col=True, fixed_height=420, header_tooltips=None):
     html_tbl = to_html_table(df, bold_first_col=bold_first_col)
 
-    if header_tooltips:
-        import re as _re
-        html_tbl = _re.sub(r'\sdata-tip="[^"]*"', '', html_tbl)  # gỡ tooltip cũ ở cell
-        html_tbl = _inject_tooltips_on_th(html_tbl, header_tooltips)  # chỉ gắn lại ở header
+    # Ensure CSS class for tooltip selectors
+    if '<table' in html_tbl:
+        open_tag = html_tbl.split('>', 1)[0]
+        if 'class=' not in open_tag:
+            html_tbl = html_tbl.replace('<table', '<table class="styled-table"', 1)
+        elif 'styled-table' not in open_tag:
+            html_tbl = html_tbl.replace('class="', 'class="styled-table ', 1)
 
-    st.markdown(
-        f'<div class="fixed-height" style="max-height:{fixed_height}px">{html_tbl}</div>',
-        unsafe_allow_html=True
-    )
+    # Remove any data-tip remnants (avoid tooltips on <td>)
+    html_tbl = re.sub(r'\sdata-tip="[^"]*"', '', html_tbl)
+
+    # Header-only tooltips
+    if header_tooltips:
+        html_tbl = _inject_tooltips_on_th(html_tbl, header_tooltips)
+
+    st.markdown(f'<div class="fixed-height" style="max-height:{fixed_height}px">{html_tbl}</div>', unsafe_allow_html=True)
 
 def load_metadata():
     try:
-        with open("data/metadata.json", "r", encoding="utf-8-sig") as f:
+        with open(F("metadata.json"), "r", encoding="utf-8-sig") as f:
             return json.load(f)
     except Exception:
         return {}
@@ -140,7 +229,7 @@ def show_home_summary():
     colA, colB = st.columns([2, 3])
     with colA:
         try:
-            df = pd.read_excel("data/AHP_Data_synced_fixed.xlsx")
+            df = pd.read_excel(F("AHP_Data_synced_fixed.xlsx"))
             metadata = load_metadata()
             n_ward = int(df["ward"].nunique()) if "ward" in df.columns else len(df)
             crits = [c for c in df.columns if c not in ("ward","ward_id")]
@@ -157,7 +246,7 @@ def show_home_summary():
         last_weights = st.session_state.get("last_saved_weights")
         if not last_weights and last_model:
             try:
-                with open("data/weights.yaml","r",encoding="utf-8") as f:
+                with open(F("weights.yaml"),"r",encoding="utf-8") as f:
                     yw = yaml.safe_load(f) or {}
                 last_weights = yw.get(last_model)
             except Exception:
@@ -322,7 +411,7 @@ elif page == "Tổng quan Dữ liệu":
     st.header("Trang 2: Khám phá và Tổng quan Dữ liệu")
 
     try:
-        df = pd.read_excel("data/AHP_Data_synced_fixed.xlsx")
+        df = pd.read_excel(F("AHP_Data_synced_fixed.xlsx"))
         metadata = load_metadata()
     except FileNotFoundError:
         st.error("Thiếu `AHP_Data_synced_fixed.xlsx` hoặc `metadata.json`.")
@@ -345,18 +434,53 @@ elif page == "Tổng quan Dữ liệu":
         col1.metric("Số phường", int(df["ward"].nunique()), help="Đếm từ 1")
         col2.metric("Số tiêu chí", int(len(df.columns) - 2), help="Không tính cột ward và ward_id")
 
-        st.subheader("Thống kê Mô tả")
-        desc = df.drop(columns=["ward", "ward_id"]).describe().T.reset_index().rename(columns={"index": "Tiêu chí"})
-        desc["Tiêu chí"] = desc["Tiêu chí"].map(lambda x: name_map.get(x, nice_name(x)))
-        display_table(apply_display_names(desc), bold_first_col=True, fixed_height=360)
+        def _resolve_desc_tooltips(df):
+            BASE = {
+                'count': "Số bản ghi hợp lệ (không tính NaN).",
+                'mean' : "Trung bình số học.",
+                'std'  : "Độ lệch chuẩn mẫu (ddof=1).",
+                'min'  : "Giá trị nhỏ nhất.",
+                '25%'  : "Phân vị 25 (Q1).",
+                '50%'  : "Phân vị 50 (Median).",
+                '75%'  : "Phân vị 75 (Q3).",
+                'max'  : "Giá trị lớn nhất."
+            }
+            ALIAS = {
+                'count': ['count','số lượng','số bản ghi','số mẫu'],
+                'mean' : ['mean','trung bình','giá trị trung bình'],
+                'std'  : ['std','độ lệch chuẩn','đlc'],
+                'min'  : ['min','nhỏ nhất','thấp nhất'],
+                '25%'  : ['25%','q1','phân vị 25'],
+                '50%'  : ['50%','median','trung vị','phân vị 50'],
+                '75%'  : ['75%','q3','phân vị 75'],
+                'max'  : ['max','lớn nhất','cao nhất'],
+            }
+            def norm(s):
+                s = re.sub(r'<[^>]+>', '', str(s))
+                return re.sub(r'\s+',' ', s).strip().lower()
+            tips = {}
+            for col in df.columns:
+                c = norm(col)
+                for k, names in ALIAS.items():
+                    if c == k or any(c == norm(n) for n in names):
+                        tips[str(col)] = BASE[k]
+                        break
+            return tips
+    
 
-        st.subheader("Bảng Dữ liệu gốc")
-        raw = df.copy().drop(columns=['ward_id'], errors='ignore')
-        raw = raw.rename(columns=name_map)
-        if 'ward' in raw.columns:
-            raw['ward'] = raw['ward'].astype(str).str.title()  # hoặc .upper()
-        raw = add_index_col(raw, "STT")
-        display_table(raw, bold_first_col=True, fixed_height=420)
+    st.subheader("Thống kê Mô tả")
+    desc = df.drop(columns=["ward", "ward_id"]).describe().T.reset_index().rename(columns={"index": "Tiêu chí"})
+    desc["Tiêu chí"] = desc["Tiêu chí"].map(lambda x: name_map.get(x, nice_name(x)))
+    _desc_view = apply_display_names(desc)
+    display_table(_desc_view, bold_first_col=True, fixed_height=360, header_tooltips=_resolve_desc_tooltips(_desc_view))
+
+    st.subheader("Bảng Dữ liệu gốc")
+    raw = df.copy().drop(columns=['ward_id'], errors='ignore')
+    raw = raw.rename(columns=name_map)
+    if 'ward' in raw.columns:
+        raw['ward'] = raw['ward'].astype(str).str.title()  # hoặc .upper()
+    raw = add_index_col(raw, "STT")
+    display_table(raw, bold_first_col=True, fixed_height=420)
 
     with tab2:
         st.subheader("Chi tiết theo tiêu chí")
@@ -400,7 +524,7 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
     st.header("Trang 3: Tạo và Cập nhật Trọng số Mô hình")
 
     all_weights = {}
-    weights_file = "data/weights.yaml"
+    weights_file = "weights.yaml"
     if os.path.exists(weights_file):
         try:
             with open(weights_file, 'r', encoding='utf-8') as f:
@@ -441,7 +565,7 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
     def show_customization_tabs(all_weights_passed_in, model_name_placeholder=""):
         metadata = load_metadata()
         try:
-            df_data = pd.read_excel("data/AHP_Data_synced_fixed.xlsx")
+            df_data = pd.read_excel(F("AHP_Data_synced_fixed.xlsx"))
             full_criteria_list = [col for col in df_data.columns if col not in ['ward', 'ward_id']]
         except FileNotFoundError:
             st.error("Thiếu file dữ liệu.")
@@ -647,7 +771,7 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
     st.header("Trang 4: Xếp hạng Địa điểm TOPSIS")
 
     try:
-        with open("data/weights.yaml", 'r', encoding='utf-8') as f:
+        with open(F("weights.yaml"), 'r', encoding='utf-8') as f:
             all_weights = yaml.safe_load(f) or {}
             model_names = list(all_weights.keys())
             if not model_names:
@@ -681,8 +805,8 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
     def run_and_display_topsis(model_name):
         st.session_state['last_topsis_model'] = model_name
         report_df = run_topsis_model(
-            data_path="data/AHP_Data_synced_fixed.xlsx",
-            json_path="data/metadata.json",
+            data_path="AHP_Data_synced_fixed.xlsx",
+            json_path="metadata.json",
             analysis_type=model_name,
             all_criteria_weights=all_weights
         )
@@ -722,7 +846,7 @@ elif page == "Phân tích Độ nhạy (What-if)":
     st.header("Trang 5: Phân tích Độ nhạy (What-if)")
 
     try:
-        with open("data/weights.yaml", 'r', encoding='utf-8') as f:
+        with open(F("weights.yaml"), 'r', encoding='utf-8') as f:
             all_weights = yaml.safe_load(f) or {}
             model_names = list(all_weights.keys())
             if not model_names:
@@ -750,7 +874,7 @@ elif page == "Phân tích Độ nhạy (What-if)":
 
         new_weights_dict = {}
         try:
-            df_data = pd.read_excel("data/AHP_Data_synced_fixed.xlsx")
+            df_data = pd.read_excel(F("AHP_Data_synced_fixed.xlsx"))
             full_criteria_list = [c for c in df_data.columns if c not in ["ward", "ward_id"]]
         except FileNotFoundError:
             st.error("Thiếu dữ liệu.")
@@ -850,8 +974,8 @@ elif page == "Map View":
 
     st.success(f"Kết quả cho mô hình: **{model_to_map}**")
 
-    geojson_file = "data/quan7_geojson.json"
-    ranking_file = f"data/ranking_result_{model_to_map}.xlsx"
+    geojson_file = "quan7_geojson.json"
+    ranking_file = f"ranking_result_{model_to_map}.xlsx"
 
     try:
         with open(geojson_file, 'r', encoding='utf-8') as f:
