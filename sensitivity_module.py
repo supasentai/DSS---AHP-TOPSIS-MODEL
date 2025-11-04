@@ -6,7 +6,10 @@ from topsis_module import run_topsis_model # Import hàm TOPSIS
 # --- CẤU HÌNH ĐƯỜNG DẪN ---
 EX_PATH = "data/AHP_Data_synced_fixed.xlsx"
 JSON_PATH = "data/metadata.json"
-CRITERIA_WEIGHTS_PATH = "data/weights.yaml"
+# ### SỬA ĐỔI: Phân biệt default và user weights ###
+DEFAULT_WEIGHTS_PATH = "data/defaultweights.yaml"
+USER_WEIGHTS_PATH = "data/weights.yaml"
+CRITERIA_WEIGHTS_PATH = USER_WEIGHTS_PATH
 
 def load_original_ranking(model_name):
     """
@@ -24,8 +27,17 @@ def load_original_ranking(model_name):
         # File chưa tồn tại, chạy lần đầu để tạo ra nó
         print(f"File {filename} chưa có. Chạy TOPSIS lần đầu để tạo...")
         try:
-            with open(CRITERIA_WEIGHTS_PATH, 'r', encoding='utf-8') as f:
-                all_weights = yaml.safe_load(f)
+            all_weights = {}
+            if os.path.exists(DEFAULT_WEIGHTS_PATH):
+                with open(DEFAULT_WEIGHTS_PATH, 'r', encoding='utf-8') as f:
+                    all_weights.update(yaml.safe_load(f) or {})
+            if os.path.exists(USER_WEIGHTS_PATH):
+                with open(USER_WEIGHTS_PATH, 'r', encoding='utf-8') as f:
+                    all_weights.update(yaml.safe_load(f) or {})
+
+            if not all_weights:
+                print(f"LỖI: Không tìm thấy file trọng số nào ({DEFAULT_WEIGHTS_PATH} hoặc {USER_WEIGHTS_PATH}).")
+                return None
             # Hàm run_topsis_model sẽ tự động lưu file
             original_df = run_topsis_model(EX_PATH, JSON_PATH, model_name, all_weights)
             return original_df
