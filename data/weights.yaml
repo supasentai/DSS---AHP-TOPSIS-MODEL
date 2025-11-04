@@ -1,15 +1,18 @@
 office:
+  population_density: 0.11904761904761904
   population_growth: 0.21428571428571427
-  GDP: 0.14285714285714285
-  rental_cost: 0.2857142857142857
-  competition_pressure: 0.35714285714285715
+  GDP: 0.23809523809523808
+  infrastructure_quality: 0.19047619047619047
+  competition_pressure: 0.23809523809523808
 warehouse:
-  population_density: 0.14705882352941177
-  population_growth: 0.11764705882352941
-  rental_cost: 0.20588235294117646
-  infrastructure_quality: 0.08823529411764706
-  amenity_score: 0.14705882352941177
-  competition_pressure: 0.29411764705882354
+  rental_cost: 0.2142
+  population_density: 0.0982
+  population_growth: 0.0659
+  accessibility_distance: 0.1799
+  infrastructure_quality: 0.0285
+  amenity_score: 0.0428
+  safety_score: 0.0822
+  competition_pressure: 0.2884
 retail_store:
   population_density: 0.1369
   population_growth: 0.099
