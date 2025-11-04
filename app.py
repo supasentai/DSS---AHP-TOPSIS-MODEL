@@ -520,6 +520,7 @@ elif page == "Tổng quan Dữ liệu":
             st.altair_chart(chart, use_container_width=True)
 
 # =============== PAGE 3: AHP Customize ===============
+
 elif page == "Tùy chỉnh Trọng số (AHP)":
     st.header("Trang 3: Tạo và Cập nhật Trọng số Mô hình")
 
@@ -527,16 +528,15 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
     weights_file = "weights.yaml"
     if os.path.exists(weights_file):
         try:
-            with open(weights_file, 'r', encoding='utf-8') as f:
+            with open(weights_file, "r", encoding="utf-8") as f:
                 all_weights = yaml.safe_load(f) or {}
         except Exception as e:
             st.error(f"Lỗi khi đọc 'weights.yaml': {e}")
             all_weights = {}
 
-    model_list = ["--- Tạo mô hình mới ---"] + list(all_weights.keys())
+    model_list = ["Tạo mô hình mới", "Office", "Warehouse", "Factory"]
     st.subheader("1. Lựa chọn Kịch bản (Scenario)")
 
-    selectbox_key_ahp = "scenario_selectbox"
     default_index_ahp = 0
     if 'scenario_selectbox' in st.session_state and st.session_state.scenario_selectbox in model_list:
         default_index_ahp = model_list.index(st.session_state.scenario_selectbox)
@@ -550,222 +550,105 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
         "Chọn một kịch bản có sẵn hoặc tạo mới:",
         model_list,
         index=default_index_ahp,
-        key=selectbox_key_ahp,
+        key="scenario_selectbox",
         on_change=on_scenario_change
     )
 
-    c1, c2 = st.columns([1,1])
-    with c1:
-        if st.button("Tắt Customize", use_container_width=True):
-            st.session_state.customize_mode = False
-            go("Phân tích Địa điểm (TOPSIS)")
-    with c2:
-        st.caption("Mặc định hiển thị Pie chart sau khi có trọng số.")
+    def _load_default_weights():
+        paths = [F("defaultweights.yaml"), "defaultweights.yaml"]
+        for path in paths:
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    obj = yaml.safe_load(f)
+                    if isinstance(obj, dict):
+                        return {str(k).lower(): v for k, v in obj.items() if isinstance(v, dict)}
+            except Exception:
+                continue
+        return {}
 
-    def show_customization_tabs(all_weights_passed_in, model_name_placeholder=""):
-        metadata = load_metadata()
+    def save_user_weights_to_yaml(weights_dict: dict, model_name: str):
+        path = F("user_weight.yaml")
         try:
-            df_data = pd.read_excel(F("AHP_Data_synced_fixed.xlsx"))
-            full_criteria_list = [col for col in df_data.columns if col not in ['ward', 'ward_id']]
-        except FileNotFoundError:
-            st.error("Thiếu file dữ liệu.")
-            st.stop()
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+            except FileNotFoundError:
+                data = {}
+            if not isinstance(data, dict):
+                data = {}
+            data[str(model_name)] = weights_dict
+            with open(path, "w", encoding="utf-8") as f:
+                yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
+            return True
+        except Exception as e:
+            st.error(f"Lỗi lưu user_weight.yaml: {e}")
+            return False
 
-        cdisp_map = criteria_display_map(full_criteria_list, metadata)
-
-        if model_name_placeholder:
-            st.subheader(f"2. Tùy chỉnh Trọng số cho: **{model_name_placeholder}**")
-            st.session_state.model_name = model_name_placeholder
+    def quick_customize_editor(current_weights: dict, scenario_name: str):
+        st.write("Tùy chỉnh nhanh: chỉnh sửa trọng số rồi lưu.")
+        ed = pd.DataFrame([(k, float(v)) for k, v in current_weights.items()], columns=["Tiêu chí", "Trọng số"])
+        ed = st.data_editor(ed, num_rows="dynamic", use_container_width=True, key=f"quick_edit_{scenario_name}")
+        if isinstance(ed, pd.DataFrame) and not ed.empty:
+            try:
+                edited = {str(row["Tiêu chí"]): float(row["Trọng số"]) for _, row in ed.iterrows()}
+            except Exception:
+                edited = current_weights
         else:
-            st.subheader("2. Tùy chỉnh Trọng số")
-            st.session_state.model_name = st.text_input("Nhập tên mô hình mới:")
+            edited = current_weights
 
-        if not st.session_state.model_name:
-            return
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Lưu bộ tuỳ chỉnh (user_weight.yaml)", use_container_width=True, key=f"btn_save_user_{scenario_name}"):
+                if save_user_weights_to_yaml(edited, scenario_name):
+                    st.success("Đã lưu user_weight.yaml")
+        with c2:
+            if st.button("Tiếp tục qua trang phân tích", use_container_width=True, key=f"btn_next_{scenario_name}"):
+                st.session_state["selected_model_for_topsis"] = scenario_name
+                st.session_state["selected_weights_for_topsis"] = edited
+                go("Phân tích Địa điểm (TOPSIS)")
 
-        st.divider()
-        st.subheader("2.5 Chọn Tiêu chí sử dụng")
-        original_weights_dict = all_weights_passed_in.get(st.session_state.model_name, {})
-        default_selection = list(original_weights_dict.keys()) if original_weights_dict else full_criteria_list
-
-        cols = st.columns(3)
-        selected_criteria_list = []
-        for i, criterion in enumerate(full_criteria_list):
-            label = cdisp_map.get(criterion, nice_name(criterion))
-            is_checked = criterion in default_selection
-            with cols[i % 3]:
-                if st.checkbox(
-                    label,
-                    value=is_checked,
-                    key=f"check_{criterion}_{st.session_state.model_name}"
-                ):
-                    selected_criteria_list.append(criterion)
-
-        st.divider()
-        if not selected_criteria_list:
-            st.warning("Chọn ít nhất một tiêu chí.")
-            st.stop()
-
-        tab1, tab2 = st.tabs(
-            ["Phương pháp 1: Điểm 1–10", "Phương pháp 2: Ma trận so sánh cặp (AHP)"]
-        )
-
-        with tab1:
-            st.info("Gán điểm 1–10 cho từng tiêu chí. Tự động chuẩn hóa thành trọng số.")
-            scores_dict = {}
-            if not original_weights_dict:
-                scores_dict = {c: 5 for c in selected_criteria_list}
-            else:
-                max_weight = max(original_weights_dict.values()) if original_weights_dict else 1
-                if max_weight == 0:
-                    max_weight = 1
-                scores_dict = {k: int(round((v / max_weight) * 9 + 1)) for k, v in original_weights_dict.items()
-                               if k in selected_criteria_list}
-                for c in selected_criteria_list:
-                    scores_dict.setdefault(c, 5)
-
-            new_scores = {}
-            for c in selected_criteria_list:
-                label = cdisp_map.get(c, nice_name(c))
-                score = st.slider(
-                    label,
-                    min_value=1,
-                    max_value=10,
-                    value=scores_dict.get(c, 5),
-                    key=f"score_{c}_{st.session_state.model_name}"
-                )
-                new_scores[c] = score
-
-            total_score = sum(new_scores.values())
-            if total_score > 0:
-                normalized_weights = {k: v / total_score for k, v in new_scores.items()}
-
-                st.subheader("Trọng số (chuẩn hóa)")
-                dfw = pd.DataFrame(
-                    [(cdisp_map.get(k, nice_name(k)), v) for k, v in normalized_weights.items()],
-                    columns=["Tiêu chí", "Trọng số"]
-                ).sort_values("Trọng số", ascending=False).reset_index(drop=True)
-                dfw = add_index_col(dfw, "STT")
-                display_table(dfw, bold_first_col=True, fixed_height=300)
-
-                base = alt.Chart(dfw.rename(columns={"Trọng số":"Weight"})).encode(theta=alt.Theta("Weight", stack=True))
-                pie = base.mark_arc(outerRadius=120).encode(color="Tiêu chí", tooltip=["Tiêu chí", alt.Tooltip("Weight", format=".1%")])
-                inside = base.mark_text(radius=80).encode(text=alt.Text("Weight", format=".1%")).transform_filter(alt.datum.Weight > 0.05)
-                outside = base.mark_text(radius=140).encode(text=alt.Text("Weight", format=".1%")).transform_filter(alt.datum.Weight <= 0.05)
-                st.altair_chart(pie + inside + outside, use_container_width=True)
-
-                if st.button("Lưu Trọng số (Phương pháp 1)", key="save_method_1"):
-                    saved_ok = save_weights_to_yaml(normalized_weights, st.session_state.model_name)
-                    if saved_ok:
-                        st.session_state.last_saved_model = st.session_state.model_name
-                        st.session_state.last_saved_weights = normalized_weights
-                        st.rerun()
-                    else:
-                        st.error("Không thể lưu.")
-            else:
-                st.warning("Tổng điểm bằng 0.")
-
-        with tab2:
-            st.info("Nhập ma trận so sánh cặp. Giá trị 1–9. CR < 0.1 được chấp nhận.")
-            n = len(selected_criteria_list)
-            matrix_state_key = f"ahp_matrix_{st.session_state.model_name}_{'_'.join(sorted(selected_criteria_list))}"
-            if (matrix_state_key not in st.session_state.ahp_matrices or
-                    st.session_state.ahp_matrices[matrix_state_key].shape[0] != n):
-                st.session_state.ahp_matrices[matrix_state_key] = np.ones((n, n))
-            current_matrix = st.session_state.ahp_matrices[matrix_state_key]
-
-            header_cols = st.columns([1.5] + [1] * n)
-            for j, col_name in enumerate(selected_criteria_list):
-                with header_cols[j + 1]:
-                    st.write(f"**{cdisp_map.get(col_name, nice_name(col_name))}**")
-
-            for i in range(n):
-                row_cols = st.columns([1.5] + [1] * n)
-                with row_cols[0]:
-                    st.write("")
-                    st.write(f"**{cdisp_map.get(selected_criteria_list[i], nice_name(selected_criteria_list[i]))}**")
-                for j in range(n):
-                    with row_cols[j + 1]:
-                        if i == j:
-                            st.text_input(f"diag_{i}_{j}", value="1.00", disabled=True, label_visibility="collapsed")
-                        elif i < j:
-                            key = f"matrix_{i}_{j}_{matrix_state_key}"
-                            val = st.session_state.get(key, 1.0)
-                            current_matrix[i, j] = val
-                            if val != 0:
-                                current_matrix[j, i] = 1.0 / val
-                            st.number_input(label=f"Input {i}-{j}", min_value=0.01, value=current_matrix[i, j],
-                                            step=0.1, format="%.2f", label_visibility="collapsed", key=key)
-                        else:
-                            st.text_input(f"low_{i}_{j}", value=f"{current_matrix[i, j]:.2f}",
-                                          disabled=True, label_visibility="collapsed")
-
-            if st.button("Tính toán và Lưu Trọng số (Phương pháp 2)", key="save_method_2"):
-                weights, cr = calculate_ahp_weights(current_matrix)
-                if weights is not None and cr is not None and cr < 0.1:
-                    st.success(f"CR = {cr:.4f}")
-                    weights_dict = {name: weight for name, weight in zip(selected_criteria_list, weights)}
-                    saved_ok = save_weights_to_yaml(weights_dict, st.session_state.model_name)
-                    if saved_ok:
-                        st.session_state.last_saved_model = st.session_state.model_name
-                        st.session_state.last_saved_weights = weights_dict
-                        st.rerun()
-                    else:
-                        st.error("Không thể lưu.")
-                else:
-                    st.error(f"CR không đạt: {cr if cr is not None else 'N/A'}")
-
-    if selected_scenario != "--- Tạo mô hình mới ---":
+    if selected_scenario not in ("--- Tạo mô hình mới ---", "Tạo mô hình mới"):
         st.subheader(f"Trọng số hiện tại: **{selected_scenario}**")
+        defaults = _load_default_weights()
+        key_lower = str(selected_scenario).strip().lower()
         current_weights = all_weights.get(selected_scenario, {})
+        if not current_weights and key_lower in ("office", "warehouse", "factory"):
+            current_weights = defaults.get(key_lower, {})
+
         if current_weights:
-            dfw = pd.DataFrame(
-                [(nice_name(k), v) for k, v in current_weights.items()],
-                columns=["Tiêu chí", "Trọng số"]
-            ).sort_values("Trọng số", ascending=False).reset_index(drop=True)
+            st.session_state["_default_display_model"] = selected_scenario
+            st.session_state["_default_display_weights"] = current_weights
+            dfw = pd.DataFrame([(nice_name(k), v) for k, v in current_weights.items()], columns=["Tiêu chí", "Trọng số"]).sort_values("Trọng số", ascending=False).reset_index(drop=True)
             dfw = add_index_col(dfw, "STT")
             display_table(dfw, bold_first_col=True, fixed_height=300)
+
+            customize_toggle = st.toggle("Customize", value=False, key="default_customize_toggle")
+            if customize_toggle:
+                if "show_customization_tabs" in globals():
+                    temp_dict = {selected_scenario: current_weights}
+                    show_customization_tabs(temp_dict, model_name_placeholder=selected_scenario)
+                else:
+                    quick_customize_editor(current_weights, selected_scenario)
+            else:
+                if st.button("Tiếp tục qua trang phân tích", use_container_width=True):
+                    st.session_state["selected_model_for_topsis"] = selected_scenario
+                    st.session_state["selected_weights_for_topsis"] = current_weights
+                    go("Phân tích Địa điểm (TOPSIS)")
         else:
             st.warning("Mô hình này chưa có trọng số.")
-
-        st.divider()
-        col1, col2, _ = st.columns([1,1,3])
-        with col1:
-            st.button("Sử dụng trọng số này", use_container_width=True, on_click=switch_to_topsis_page_and_run)
-        with col2:
-            if st.button("Tùy chỉnh (Customize)", use_container_width=True):
-                st.session_state.customize_mode = True
-                st.session_state.selected_model_for_topsis = None
-                st.session_state.last_saved_model = None
-                st.session_state.last_saved_weights = None
-
-        if st.session_state.customize_mode:
-            show_customization_tabs(all_weights, model_name_placeholder=selected_scenario)
-
+            st.info("Bật Customize để tự tạo trọng số cho kịch bản này.")
+            if st.toggle("Customize", value=True, key="default_customize_toggle_empty"):
+                if "show_customization_tabs" in globals():
+                    show_customization_tabs({}, model_name_placeholder=selected_scenario)
+                else:
+                    quick_customize_editor({}, selected_scenario)
     else:
         st.info("Tạo mô hình mới.")
-        show_customization_tabs(all_weights)
-
-    if (st.session_state.get('last_saved_model') == st.session_state.get('model_name') and
-            st.session_state.get('last_saved_weights')):
-        st.divider()
-        weights_dict = st.session_state.last_saved_weights
-        df_chart = pd.DataFrame(weights_dict.items(), columns=["Tiêu chí(gốc)", "Trọng số"])
-        df_chart["Tiêu chí"] = df_chart["Tiêu chí(gốc)"].map(nice_name)
-        df_chart = df_chart.drop(columns=["Tiêu chí(gốc)"])
-        base = alt.Chart(df_chart).encode(theta=alt.Theta("Trọng số", stack=True))
-        pie = base.mark_arc(outerRadius=120).encode(color="Tiêu chí", tooltip=["Tiêu chí", alt.Tooltip("Trọng số", format=".1%")])
-        inside = base.mark_text(radius=80).encode(text=alt.Text("Trọng số", format=".1%")).transform_filter(alt.datum["Trọng số"] > 0.05)
-        outside = base.mark_text(radius=140).encode(text=alt.Text("Trọng số", format=".1%")).transform_filter(alt.datum["Trọng số"] <= 0.05)
-        st.altair_chart(pie + inside + outside, use_container_width=True)
-
-        st.button(
-            f"➡️ Chuyển đến TOPSIS với '{st.session_state.model_name}'",
-            key="run_topsis_after_save",
-            on_click=switch_to_topsis_with_last_saved,
-            use_container_width=True
-        )
-
+        if "show_customization_tabs" in globals():
+            show_customization_tabs(all_weights)
+        else:
+            st.warning("Trình tuỳ chỉnh chi tiết không khả dụng; dùng bản chỉnh nhanh.")
+            quick_customize_editor({}, "NewModel")
 # =============== PAGE 4: TOPSIS ===============
 elif page == "Phân tích Địa điểm (TOPSIS)":
     st.header("Trang 4: Xếp hạng Địa điểm TOPSIS")
