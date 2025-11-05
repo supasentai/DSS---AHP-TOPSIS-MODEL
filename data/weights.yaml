@@ -1,35 +1,32 @@
 office:
-  population_density: 0.11904761904761904
-  population_growth: 0.21428571428571427
-  GDP: 0.23809523809523808
-  infrastructure_quality: 0.19047619047619047
-  competition_pressure: 0.23809523809523808
+  population_density:         0.15
+  population_growth:          0.10
+  GDP:                        0.10
+  rental_cost:                0.08
+  accessibility_distance:     0.15
+  infrastructure_quality:     0.10
+  amenity_score:              0.15
+  safety_score:               0.10
+  competition_pressure:       0.07
+
 warehouse:
-  rental_cost: 0.2142
-  population_density: 0.0982
-  population_growth: 0.0659
-  accessibility_distance: 0.1799
-  infrastructure_quality: 0.0285
-  amenity_score: 0.0428
-  safety_score: 0.0822
-  competition_pressure: 0.2884
-retail_store:
-  population_density: 0.1369
-  population_growth: 0.099
-  GDP: 0.1091
-  rental_cost: 0.1091
-  accessibility_distance: 0.1091
-  infrastructure_quality: 0.1091
-  amenity_score: 0.1091
-  safety_score: 0.1091
-  competition_pressure: 0.1091
-gara:
-  population_density: 0.0966
-  population_growth: 0.1642
-  GDP: 0.1667
-  rental_cost: 0.1018
-  accessibility_distance: 0.1036
-  infrastructure_quality: 0.0936
-  amenity_score: 0.0918
-  safety_score: 0.0951
-  competition_pressure: 0.0867
+  population_density:         0.05
+  population_growth:          0.08
+  GDP:                        0.05
+  rental_cost:                0.20
+  accessibility_distance:     0.18
+  infrastructure_quality:     0.15
+  amenity_score:              0.05
+  safety_score:               0.10
+  competition_pressure:       0.14
+
+factory:
+  population_density:         0.03
+  population_growth:          0.10
+  GDP:                        0.05
+  rental_cost:                0.25
+  accessibility_distance:     0.12
+  infrastructure_quality:     0.20
+  amenity_score:              0.03
+  safety_score:               0.12
+  competition_pressure:       0.10

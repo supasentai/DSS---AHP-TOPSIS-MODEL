@@ -53,8 +53,9 @@ def calculate_ahp_weights(matrix):
 
 def save_weights_to_yaml(weights_dict, model_name, filename="data/weights.yaml"):
     """
-    Cập nhật (thêm hoặc ghi đè) một mô hình trọng số vào file YAML
-    mà không làm mất các mô hình khác.
+    Lưu một mô hình trọng số vào file YAML.
+    Nếu tên đã tồn tại, tự động thêm hậu tố _1, _2, ... (để giữ log)
+    Trả về: (bool: thành công, str: tên file đã lưu)
     """
     all_models_data = {}
     if os.path.exists(filename):
@@ -67,15 +68,28 @@ def save_weights_to_yaml(weights_dict, model_name, filename="data/weights.yaml")
             print(f"CẢNH BÁO: Không đọc được file '{filename}' cũ. Sẽ tạo file mới. Lỗi: {e}")
             all_models_data = {}
 
-    # Cập nhật dictionary với mô hình mới
+    # --- LOGIC MỚI: TỰ ĐỘNG ĐẾM VÀ ĐỔI TÊN ĐỂ GIỮ LOG ---
+    final_model_name = model_name.strip()
+    if final_model_name in all_models_data:
+        # Tên đã tồn tại, bắt đầu tìm tên mới
+        counter = 1
+        new_name = f"{final_model_name}_{counter}"
+        while new_name in all_models_data:
+            counter += 1
+            new_name = f"{final_model_name}_{counter}"
+
+        print(f"Thông báo: Tên '{final_model_name}' đã tồn tại. Đang lưu với tên mới: '{new_name}'")
+        final_model_name = new_name
+    # --- KẾT THÚC LOGIC MỚI ---
+
+    # Cập nhật dictionary với mô hình mới (dùng tên cuối cùng)
     cleaned_weights_dict = {str(k): float(v) for k, v in weights_dict.items()}
-    all_models_data[model_name] = cleaned_weights_dict
+    all_models_data[final_model_name] = cleaned_weights_dict
 
     try:
         with open(filename, 'w', encoding='utf-8') as f:
             yaml.dump(all_models_data, f, allow_unicode=True, sort_keys=False, indent=2)
-        return True  # Trả về True nếu thành công
+        return True, final_model_name  # Trả về True (thành công) và TÊN ĐÃ LƯU
     except Exception as e:
         print(f"LỖI: Không thể ghi ra file '{filename}'. Lỗi: {e}")
-        return False  # Trả về False nếu thất bại
-
+        return False, None  # Trả về False (thất bại) và None

@@ -1,4 +1,3 @@
-# lite_model.py
 """
 Phiên bản Console (CLI) của ứng dụng DSS Quận 7.
 Dùng để chạy logic nghiệp vụ mà không cần giao diện Streamlit.
@@ -15,10 +14,10 @@ import sys
 # --- Cấu hình đường dẫn ---
 DATA_PATH = "data/AHP_Data_synced_fixed.xlsx"
 METADATA_PATH = "data/metadata.json"
-# ### SỬA ĐỔI: Phân biệt default và user weights ###
+# Chỉ dùng 1 file weights
+WEIGHTS_PATH = "data/weights.yaml"
+# File default sẽ dùng để khởi tạo nếu file weights không tồn tại
 DEFAULT_WEIGHTS_PATH = "data/defaultweights.yaml"
-USER_WEIGHTS_PATH = "data/weights.yaml"
-WEIGHTS_PATH = USER_WEIGHTS_PATH  # Giữ tương thích cho hàm save (mặc dù hàm save có default)
 
 # --- Import các module nghiệp vụ ---
 try:
@@ -71,41 +70,39 @@ def get_all_criteria():
         return []
 
 
+# --- LOGIC MỚI: TẢI WEIGHTS (chỉ dùng 1 file) ---
 def load_weights_file():
     """
-    Tải file default và user.
-    Trả về (all_weights, default_model_names)
-    all_weights: Dict đã gộp (user ghi đè default)
-    default_model_names: Set các tên mô hình từ file default
+    Tải file weights.yaml.
+    Nếu không tồn tại, khởi tạo nó từ defaultweights.yaml.
     """
-    default_weights = {}
-    user_weights = {}
+    if not os.path.exists(WEIGHTS_PATH):
+        if os.path.exists(DEFAULT_WEIGHTS_PATH):
+            print(f"File {WEIGHTS_PATH} không tìm thấy. Đang khởi tạo từ {DEFAULT_WEIGHTS_PATH}...")
+            try:
+                with open(DEFAULT_WEIGHTS_PATH, 'r', encoding='utf-8') as f_default:
+                    default_data = yaml.safe_load(f_default)
 
-    # 1. Tải default
-    if os.path.exists(DEFAULT_WEIGHTS_PATH):
-        try:
-            with open(DEFAULT_WEIGHTS_PATH, 'r', encoding='utf-8') as f:
-                default_weights = yaml.safe_load(f) or {}
-        except Exception as e:
-            print(f"LỖI khi đọc {DEFAULT_WEIGHTS_PATH}: {e}")
-    else:
-        print(f"Cảnh báo: Không tìm thấy file {DEFAULT_WEIGHTS_PATH}.")
+                with open(WEIGHTS_PATH, 'w', encoding='utf-8') as f_weights:
+                    yaml.dump(default_data, f_weights, allow_unicode=True, sort_keys=False, indent=2)
+                return default_data or {}
+            except Exception as e:
+                print(f"Lỗi khi khởi tạo {WEIGHTS_PATH}: {e}")
+                return {}
+        else:
+            print(f"Cảnh báo: Không tìm thấy {WEIGHTS_PATH} và {DEFAULT_WEIGHTS_PATH}. Bắt đầu với dict rỗng.")
+            return {}
 
-    # 2. Tải user
-    if os.path.exists(USER_WEIGHTS_PATH):
-        try:
-            with open(USER_WEIGHTS_PATH, 'r', encoding='utf-8') as f:
-                user_weights = yaml.safe_load(f) or {}
-        except Exception as e:
-            print(f"LỖI khi đọc {USER_WEIGHTS_PATH}: {e}")
-    else:
-        print(f"Thông báo: Không tìm thấy file {USER_WEIGHTS_PATH}. Chỉ sử dụng default (nếu có).")
+    # Nếu file weights.yaml tồn tại, đọc nó
+    try:
+        with open(WEIGHTS_PATH, 'r', encoding='utf-8') as f:
+            return yaml.safe_load(f) or {}
+    except Exception as e:
+        print(f"LỖI khi đọc {WEIGHTS_PATH}: {e}")
+        return {}
 
-    # 3. Lấy tên default và gộp
-    default_model_names = set(default_weights.keys())
-    all_weights = {**default_weights, **user_weights}  # User ghi đè default
 
-    return all_weights, default_model_names
+# --- KẾT THÚC LOGIC MỚI ---
 
 
 def select_model(all_weights):
@@ -171,62 +168,58 @@ def manage_ahp():
     print("  2. QUẢN LÝ TRỌNG SỐ (AHP)")
     print("===================================")
 
-    # ### SỬA ĐỔI: Lấy cả all_weights và default_model_names ###
-    all_weights, default_model_names = load_weights_file()
-
+    all_weights = load_weights_file()
     print("Các mô hình hiện có:", list(all_weights.keys()) or "[Trống]")
-    print("\n [1] Tạo/Cập nhật mô hình (Phương pháp 1: Gán điểm 1-10)")
-    print(" [2] Tạo/Cập nhật mô hình (Phương pháp 2: Ma trận so sánh cặp)")
+    print("\n [1] Tạo/Tùy chỉnh (Phương pháp 1: Gán điểm 1-10)")
+    print(" [2] Tạo/Tùy chỉnh (Phương pháp 2: Ma trận so sánh cặp)")
     print(" [0] Quay lại Menu")
 
     choice = input("Nhập lựa chọn: ")
 
     if choice == '1':
-        # ### SỬA ĐỔI: Truyền default_model_names ###
-        ahp_method_1(all_weights, default_model_names)
+        ahp_method_1(all_weights)
     elif choice == '2':
-        # ### SỬA ĐỔI: Truyền default_model_names ###
-        ahp_method_2(all_weights, default_model_names)
+        ahp_method_2(all_weights)
     else:
         return
 
 
-def ahp_method_1(all_weights, default_model_names):
+def ahp_method_1(all_weights):
     """AHP - Phương pháp 1: Gán điểm 1-10"""
-    print("\n--- AHP: Tạo/Cập nhật (Phương pháp 1: Điểm 1-10) ---")
-    model_name = input("Nhập tên mô hình: ").strip()
+    print("\n--- AHP: Tạo mới (Phương pháp 1: Điểm 1-10) ---")
+    model_name = input("Nhập tên mô hình (nếu trùng sẽ tự động đổi tên): ").strip()
     if not model_name:
         print("Tên mô hình không được để trống.")
         wait_for_enter()
         return
 
-    # ### SỬA ĐỔI: Logic kiểm tra tên ###
-    if model_name in default_model_names:
-        print(f"LỖI: '{model_name}' là một mô hình default (gốc).")
-        print("Bạn không thể ghi đè lên mô hình default.")
-        print("Nếu muốn tùy chỉnh, vui lòng chạy lại và nhập một tên mới.")
-        wait_for_enter()
-        return
-    # ### HẾT SỬA ĐỔI ###
-
-    if model_name in all_weights:
-        # Tên này nằm trong all_weights nhưng không nằm trong default_model_names
-        # => Nó là mô hình của user (trong weights.yaml)
-        print(f"Cảnh báo: Tên '{model_name}' đã tồn tại (trong weights.yaml). Sẽ ghi đè.")
-    else:
-        print(f"Thông tin: Sẽ tạo mô hình mới tên '{model_name}'.")
+    # Logic kiểm tra tên trùng sẽ do save_weights_to_yaml xử lý
 
     all_criteria = get_all_criteria()
     if not all_criteria:
         return
 
+    # Lấy trọng số cũ (nếu có) để làm giá trị mặc định
+    original_weights_dict = all_weights.get(model_name, {})
+    default_scores = {}
+    if original_weights_dict:
+        max_weight = max(original_weights_dict.values()) if original_weights_dict else 1
+        if max_weight == 0: max_weight = 1
+        default_scores = {k: int(round((v / max_weight) * 9 + 1)) for k, v in original_weights_dict.items()}
+
     print("\nChọn tiêu chí (nhập số, cách nhau bằng dấu phẩy. Ví dụ: 1,3,5):")
+    default_selection_keys = list(original_weights_dict.keys()) if original_weights_dict else all_criteria
     for i, name in enumerate(all_criteria):
-        print(f" [{i + 1}] {nice_name(name)}")
+        is_default = " (*)" if name in default_selection_keys else ""
+        print(f" [{i + 1}] {nice_name(name)}{is_default}")
 
     try:
-        selected_indices = [int(x.strip()) - 1 for x in input("Chọn: ").split(',')]
-        selected_criteria = [all_criteria[i] for i in selected_indices if 0 <= i < len(all_criteria)]
+        selected_indices_str = input(f"Chọn (mặc định: {'tất cả' if not original_weights_dict else 'theo mô hình'}): ")
+        if not selected_indices_str.strip():
+            selected_criteria = default_selection_keys
+        else:
+            selected_indices = [int(x.strip()) - 1 for x in selected_indices_str.split(',')]
+            selected_criteria = [all_criteria[i] for i in selected_indices if 0 <= i < len(all_criteria)]
     except ValueError:
         print("Lỗi: Nhập không hợp lệ. Phải là các con số.")
         wait_for_enter()
@@ -242,7 +235,13 @@ def ahp_method_1(all_weights, default_model_names):
     for crit in selected_criteria:
         while True:
             try:
-                score = float(input(f"  Điểm cho '{nice_name(crit)}': "))
+                default_val = default_scores.get(crit, 5)
+                score_str = input(f"  Điểm cho '{nice_name(crit)}' (mặc định: {default_val}): ")
+                if not score_str.strip():
+                    score = default_val
+                else:
+                    score = float(score_str)
+
                 if 1 <= score <= 10:
                     scores[crit] = score
                     break
@@ -262,50 +261,49 @@ def ahp_method_1(all_weights, default_model_names):
     print("\n--- Trọng số đã chuẩn hóa ---")
     print(json.dumps(normalized_weights, indent=2))
 
-    # ### SỬA ĐỔI: Luôn lưu vào USER_WEIGHTS_PATH ###
-    if save_weights_to_yaml(normalized_weights, model_name, USER_WEIGHTS_PATH):
-        print(f"\nTHÀNH CÔNG: Đã lưu mô hình '{model_name}' vào {USER_WEIGHTS_PATH}.")
+    # --- SỬA LỖI LOGIC LƯU ---
+    saved_ok, final_name = save_weights_to_yaml(normalized_weights, model_name, WEIGHTS_PATH)
+    if saved_ok:
+        if final_name != model_name:
+            print(f"\nTHÀNH CÔNG: Tên '{model_name}' đã tồn tại. Đã lưu với tên mới: '{final_name}'")
+        else:
+            print(f"\nTHÀNH CÔNG: Đã lưu mô hình '{final_name}' vào {WEIGHTS_PATH}.")
     else:
         print(f"\nLỖI: Không thể lưu mô hình.")
+    # --- KẾT THÚC SỬA LỖI ---
     wait_for_enter()
 
 
-def ahp_method_2(all_weights, default_model_names):
+def ahp_method_2(all_weights):
     """AHP - Phương pháp 2: Ma trận so sánh cặp"""
-    print("\n--- AHP: Tạo/Cập nhật (Phương pháp 2: Ma trận) ---")
-    model_name = input("Nhập tên mô hình: ").strip()
+    print("\n--- AHP: Tạo mới (Phương pháp 2: Ma trận) ---")
+    model_name = input("Nhập tên mô hình (nếu trùng sẽ tự động đổi tên): ").strip()
     if not model_name:
         print("Tên mô hình không được để trống.")
         wait_for_enter()
         return
 
-    # ### SỬA ĐỔI: Logic kiểm tra tên ###
-    if model_name in default_model_names:
-        print(f"LỖI: '{model_name}' là một mô hình default (gốc).")
-        print("Bạn không thể ghi đè lên mô hình default.")
-        print("Nếu muốn tùy chỉnh, vui lòng chạy lại và nhập một tên mới.")
-        wait_for_enter()
-        return
-    # ### HẾT SỬA ĐỔI ###
-
-    if model_name in all_weights:
-        # Tên này nằm trong all_weights nhưng không nằm trong default_model_names
-        # => Nó là mô hình của user (trong weights.yaml)
-        print(f"Cảnh báo: Tên '{model_name}' đã tồn tại (trong weights.yaml). Sẽ ghi đè.")
-    else:
-        print(f"Thông tin: Sẽ tạo mô hình mới tên '{model_name}'.")
+    # Logic kiểm tra tên trùng sẽ do save_weights_to_yaml xử lý
 
     all_criteria = get_all_criteria()
     if not all_criteria:
         return
 
+    original_weights_dict = all_weights.get(model_name, {})
+    default_selection_keys = list(original_weights_dict.keys()) if original_weights_dict else all_criteria
+
     print("\nChọn tiêu chí (nhập số, cách nhau bằng dấu phẩy. Ví dụ: 1,3,5):")
     for i, name in enumerate(all_criteria):
-        print(f" [{i + 1}] {nice_name(name)}")
+        is_default = " (*)" if name in default_selection_keys else ""
+        print(f" [{i + 1}] {nice_name(name)}{is_default}")
 
     try:
-        selected_indices = [int(x.strip()) - 1 for x in input("Chọn: ").split(',')]
-        selected_criteria = [all_criteria[i] for i in selected_indices if 0 <= i < len(all_criteria)]
+        selected_indices_str = input(f"Chọn (mặc định: {'tất cả' if not original_weights_dict else 'theo mô hình'}): ")
+        if not selected_indices_str.strip():
+            selected_criteria = default_selection_keys
+        else:
+            selected_indices = [int(x.strip()) - 1 for x in selected_indices_str.split(',')]
+            selected_criteria = [all_criteria[i] for i in selected_indices if 0 <= i < len(all_criteria)]
     except ValueError:
         print("Lỗi: Nhập không hợp lệ. Phải là các con số.")
         wait_for_enter()
@@ -352,11 +350,16 @@ def ahp_method_2(all_weights, default_model_names):
     print("\n--- Trọng số ---")
     print(json.dumps(weights_dict, indent=2))
 
-    # ### SỬA ĐỔI: Luôn lưu vào USER_WEIGHTS_PATH ###
-    if save_weights_to_yaml(weights_dict, model_name, USER_WEIGHTS_PATH):
-        print(f"\nTHÀNH CÔNG: Đã lưu mô hình '{model_name}' vào {USER_WEIGHTS_PATH}.")
+    # --- SỬA LỖI LOGIC LƯU ---
+    saved_ok, final_name = save_weights_to_yaml(weights_dict, model_name, WEIGHTS_PATH)
+    if saved_ok:
+        if final_name != model_name:
+            print(f"\nTHÀNH CÔNG: Tên '{model_name}' đã tồn tại. Đã lưu với tên mới: '{final_name}'")
+        else:
+            print(f"\nTHÀNH CÔNG: Đã lưu mô hình '{final_name}' vào {WEIGHTS_PATH}.")
     else:
         print(f"\nLỖI: Không thể lưu mô hình.")
+    # --- KẾT THÚC SỬA LỖI ---
     wait_for_enter()
 
 
@@ -367,8 +370,7 @@ def run_topsis_console():
     print("  3. CHẠY XẾP HẠNG (TOPSIS)")
     print("===================================")
 
-    # ### SỬA ĐỔI: Chỉ cần all_weights, bỏ qua default_names ###
-    all_weights, _ = load_weights_file()
+    all_weights = load_weights_file()
     model_name, weights_dict = select_model(all_weights)
 
     if model_name:
@@ -397,8 +399,7 @@ def run_what_if_console():
     print("  4. CHẠY PHÂN TÍCH (WHAT-IF)")
     print("===================================")
 
-    # ### SỬA ĐỔI: Chỉ cần all_weights, bỏ qua default_names ###
-    all_weights, _ = load_weights_file()
+    all_weights = load_weights_file()
     print("Chọn mô hình GỐC để chạy What-if:")
     model_name, original_weights = select_model(all_weights)
 
@@ -428,7 +429,8 @@ def run_what_if_console():
                           for k, v in new_weights_dict.items()}
 
     print("\nĐang chạy phân tích What-if...")
-    original_df, new_df = run_what_if_analysis(model_name, normalized_weights)
+    # CẬP NHẬT: Truyền all_weights vào hàm what-if
+    original_df, new_df = run_what_if_analysis(model_name, normalized_weights, all_weights)
 
     if original_df is not None and new_df is not None:
         print("\n--- BẢNG XẾP HẠNG GỐC ---")
@@ -459,8 +461,7 @@ def export_report_console():
     print("LƯU Ý: Chức năng này yêu cầu mô hình AHP và")
     print("file kết quả TOPSIS (.xlsx) tương ứng phải tồn tại.")
 
-    # ### SỬA ĐỔI: Chỉ cần all_weights, bỏ qua default_names ###
-    all_weights, _ = load_weights_file()
+    all_weights = load_weights_file()
     model_name, _ = select_model(all_weights)
 
     if not model_name:
@@ -476,7 +477,7 @@ def export_report_console():
 
     print(f"\nĐang tạo báo cáo PDF cho mô hình: {model_name}...")
     try:
-        pdf_path = create_full_report(model_name)
+        pdf_path = create_full_report(model_name, all_weights)
         if pdf_path:
             print(f"\n--- THÀNH CÔNG! ---")
             print(f"Đã lưu báo cáo tại: {pdf_path}")
@@ -536,16 +537,7 @@ if __name__ == "__main__":
     os.makedirs("data", exist_ok=True)
     os.makedirs("reports", exist_ok=True)
 
-    # ### THÊM MỚI: Logic khởi tạo user weights từ default weights ###
-    if not os.path.exists(USER_WEIGHTS_PATH) and os.path.exists(DEFAULT_WEIGHTS_PATH):
-        try:
-            import shutil
-
-            shutil.copyfile(DEFAULT_WEIGHTS_PATH, USER_WEIGHTS_PATH)
-            print(f"Thông báo: Đã khởi tạo {USER_WEIGHTS_PATH} từ file default.")
-        except Exception as e:
-            print(f"Lỗi khi copy file default weights: {e}")
+    # Chạy logic khởi tạo file weights một lần khi bắt đầu
+    load_weights_file()
 
     main()
-
-
