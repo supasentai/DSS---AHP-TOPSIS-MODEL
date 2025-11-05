@@ -1,2 +1,12 @@
-.idea/
+# Bỏ qua các file cache của Python và font
 __pycache__/
+*.pyc
+Font/*.pkl
+
+# Bỏ qua các file kết quả và báo cáo
+data/*.xlsx
+reports/
+report/
+
+# Bỏ qua file hệ điều hành
+.DS_Store
