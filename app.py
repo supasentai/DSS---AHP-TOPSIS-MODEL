@@ -125,7 +125,7 @@ def _next_clone_name(base_name, existing_names):
         cand = f"{base}_{i}"
     return cand
 
-def _load_defaultweights_all(path="data/defaultweights.yaml"):
+def _load_defaultweights_all(path="data/weights.yaml"):
     import yaml, os
     if not os.path.exists(path):
         return {}
@@ -207,6 +207,23 @@ def _inject_tooltips_on_th(html_table: str, header_tooltips: dict) -> str:
     new_head = ''.join(new_cells)
     return html_table[:m.start(1)] + new_head + html_table[m.end(1):]
 
+@st.cache_data
+def _load_all_weights_for_options():
+    import yaml, os
+    out = {}
+    p1 = F("defaultweights.yaml")
+    p2 = F("weights.yaml")
+    for p in (p1, p2):
+        if os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                d = yaml.safe_load(f) or {}
+                if isinstance(d, dict):
+                    out.update({str(k): d[k] for k in d.keys()})
+    return out  # dict tên -> weights
+
+def _scenario_options():
+    names = sorted(_load_all_weights_for_options().keys(), key=str.casefold)
+    return ["Tạo mô hình mới"] + names
 
 def display_table(df, bold_first_col=True, fixed_height=420, header_tooltips=None):
     html_tbl = to_html_table(df, bold_first_col=bold_first_col)
@@ -280,7 +297,7 @@ def show_home_summary():
         last_weights = st.session_state.get("last_saved_weights")
         if not last_weights and last_model:
             try:
-                with open(F("weights.yaml"),"r",encoding="utf-8") as f:
+                with open(F("data/weights.yaml"),"r",encoding="utf-8") as f:
                     yw = yaml.safe_load(f) or {}
                 last_weights = yw.get(last_model)
             except Exception:
@@ -559,13 +576,13 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
     st.header("Trang 3: Tạo và Cập nhật Trọng số Mô hình")
 
     all_weights = {}
-    weights_file = "weights.yaml"
+    weights_file = "data/weights.yaml"
     if os.path.exists(weights_file):
         try:
             with open(weights_file, "r", encoding="utf-8") as f:
                 all_weights = yaml.safe_load(f) or {}
         except Exception as e:
-            st.error(f"Lỗi khi đọc 'weights.yaml': {e}")
+            st.error(f"Lỗi khi đọc 'data/weights.yaml': {e}")
             all_weights = {}
 
     model_list = ["Tạo mô hình mới", "Office", "Warehouse", "Factory"]
@@ -589,7 +606,7 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
     )
 
     def _load_default_weights():
-        paths = [F("defaultweights.yaml"), "defaultweights.yaml"]
+        paths = [F("data/weights.yaml"), "data/weights.yaml"]
         for path in paths:
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -601,7 +618,7 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
         return {}
 
     def save_user_weights_to_yaml(weights_dict: dict, model_name: str):
-        path = F("defaultweights.yaml")
+        path = F("data/weights.yaml")
         try:
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -615,7 +632,7 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
                 yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
             return True
         except Exception as e:
-            st.error(f"Lỗi lưu defaultweights.yaml: {e}")
+            st.error(f"Lỗi lưu data/weights.yaml: {e}")
             return False
 
 
@@ -677,7 +694,7 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
 
         with c1:
             disabled = bool(invalid_quick or (len(edited) == 0))
-            if st.button("Lưu bộ tuỳ chỉnh (defaultweights.yaml)", use_container_width=True, disabled=disabled,
+            if st.button("Lưu bộ tuỳ chỉnh (data/weights.yaml)", use_container_width=True, disabled=disabled,
                          key=f"btn_save_{scenario_name}"):
                 # 1) Không lưu nếu không có thay đổi so với current_weights
                 if _weights_equal(edited, current_weights or {}):
@@ -705,7 +722,7 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
 
                     ok = save_user_weights_to_yaml(edited, target)
                     if ok:
-                        st.success(f"Đã lưu '{target}' vào defaultweights.yaml")
+                        st.success(f"Đã lưu '{target}' vào data/weights.yaml")
 
         with c2:
             disabled = bool(invalid_quick or (len(edited) == 0))
@@ -766,14 +783,14 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
     st.header("Trang 4: Xếp hạng Địa điểm TOPSIS")
 
     try:
-        with open(F("weights.yaml"), 'r', encoding='utf-8') as f:
+        with open(F("data/weights.yaml"), 'r', encoding='utf-8') as f:
             all_weights = yaml.safe_load(f) or {}
             model_names = list(all_weights.keys())
             if not model_names:
                 st.warning("Chưa có mô hình AHP.")
                 st.stop()
     except FileNotFoundError:
-        st.error("Thiếu 'weights.yaml'.")
+        st.error("Thiếu 'data/weights.yaml'.")
         st.stop()
 
     selectbox_key_topsis = "topsis_model_selector"
@@ -841,14 +858,14 @@ elif page == "Phân tích Độ nhạy (What-if)":
     st.header("Trang 5: Phân tích Độ nhạy (What-if)")
 
     try:
-        with open(F("weights.yaml"), 'r', encoding='utf-8') as f:
+        with open(F("data/weights.yaml"), 'r', encoding='utf-8') as f:
             all_weights = yaml.safe_load(f) or {}
             model_names = list(all_weights.keys())
             if not model_names:
                 st.warning("Chưa có mô hình AHP.")
                 st.stop()
     except FileNotFoundError:
-        st.error("Thiếu 'weights.yaml'.")
+        st.error("Thiếu 'data/weights.yaml'.")
         st.stop()
 
     selectbox_key_whatif = "whatif_model_selector"
