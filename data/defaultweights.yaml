@@ -1,4 +1,3 @@
-# FILE ĐÚNG
 office:
   population_density:         0.15
   population_growth:          0.10
@@ -30,4 +29,5 @@ factory:
   infrastructure_quality:     0.20
   amenity_score:              0.03
   safety_score:               0.12
+
   competition_pressure:       0.10
