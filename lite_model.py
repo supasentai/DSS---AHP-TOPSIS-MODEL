@@ -19,13 +19,18 @@ WEIGHTS_PATH = "data/weights.yaml"
 # File default sẽ dùng để khởi tạo nếu file weights không tồn tại
 DEFAULT_WEIGHTS_PATH = "data/defaultweights.yaml"
 
+
 # --- Import các module nghiệp vụ ---
 try:
     from ahp_module import calculate_ahp_weights, save_weights_to_yaml
     from topsis_module import run_topsis_model
     from sensitivity_module import run_what_if_analysis
-    # Import module báo cáo mới để test
+
+    # --- CẬP NHẬT IMPORT ---
+    # Quay lại dùng hàm tạo PDF
     from report_module import create_full_report
+    # --- KẾT THÚC CẬP NHẬT ---
+
 except ImportError as e:
     print(f"LỖI: Không thể import module. Vui lòng đảm bảo các file .py")
     print(f"(.py, topsis_module.py, sensitivity_module.py, report_module.py)")
@@ -33,15 +38,7 @@ except ImportError as e:
     sys.exit(1)
 
 # --- Cấu hình hiển thị Pandas ---
-pd.set_option('display.max_rows', 50)
-pd.set_option('display.max_columns', None)
-pd.set_option('display.width', 1000)
-
-
-# ===========================
-# Helpers cho Console
-# ===========================
-
+# ... (giữ nguyên các hàm helper: clear_screen, wait_for_enter, nice_name, get_all_criteria, load_weights_file, select_model) ...
 def clear_screen():
     """Xóa màn hình console."""
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -68,7 +65,6 @@ def get_all_criteria():
     except Exception as e:
         print(f"LỖI khi đọc file dữ liệu: {e}")
         return []
-
 
 # --- LOGIC MỚI: TẢI WEIGHTS (chỉ dùng 1 file) ---
 def load_weights_file():
@@ -100,7 +96,6 @@ def load_weights_file():
     except Exception as e:
         print(f"LỖI khi đọc {WEIGHTS_PATH}: {e}")
         return {}
-
 
 # --- KẾT THÚC LOGIC MỚI ---
 
@@ -477,10 +472,22 @@ def export_report_console():
 
     print(f"\nĐang tạo báo cáo PDF cho mô hình: {model_name}...")
     try:
+        # --- CẬP NHẬT TÊN HÀM VÀ TRUYỀN all_weights ---
         pdf_path = create_full_report(model_name, all_weights)
         if pdf_path:
             print(f"\n--- THÀNH CÔNG! ---")
             print(f"Đã lưu báo cáo tại: {pdf_path}")
+            # Thử tự động mở file
+            try:
+                os.startfile(pdf_path) # Windows
+            except AttributeError:
+                try:
+                    os.system(f'open "{pdf_path}"') # macOS
+                except:
+                    try:
+                        os.system(f'xdg-open "{pdf_path}"') # Linux
+                    except:
+                        print(f"Hãy tự mở file trên trình duyệt: {pdf_path}")
         else:
             print("\nLỖI: Không thể tạo báo cáo PDF. (Xem chi tiết lỗi ở trên).")
 
@@ -493,9 +500,7 @@ def export_report_console():
 
 
 # ===========================
-# MENU CHÍNH
-# ===========================
-
+# ... (giữ nguyên hàm main) ...
 def main():
     """Vòng lặp menu chính của ứng dụng console."""
     while True:
@@ -509,7 +514,7 @@ def main():
         print(" [2] Quản lý Trọng số (AHP)")
         print(" [3] Chạy Xếp hạng (TOPSIS)")
         print(" [4] Chạy Phân tích (What-if)")
-        print(" [5] Xuất Báo cáo PDF (Test)")
+        print(" [5] Xuất Báo cáo PDF (Test)") # <-- Đã đổi tên
         print("\n [0] Thoát")
 
         choice = input("\nNhập lựa chọn của bạn: ").strip()
@@ -528,7 +533,7 @@ def main():
             print("Đang thoát... Tạm biệt!")
             break
         else:
-            print("Lựa chọn không hợp lệ. Vui lòng thử lại.")
+            print("Lọd-lựa không hợp lệ. Vui lòng thử lại.")
             wait_for_enter()
 
 
