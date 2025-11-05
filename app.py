@@ -59,54 +59,39 @@ def inject_global_css():
         .styled-table th,.styled-table td{padding:12px 14px!important;text-align:center!important;vertical-align:middle!important}
         .fixed-height{max-height:420px;overflow:auto;margin-bottom:32px}
 
-        /* LIGHT THEME */
+        /* LIGHT */
         .styled-table{border:4px solid #1F2937!important;background:#FFFFFF!important}
         .styled-table thead th{font-weight:800!important;background:#F1F5F9!important;color:#0F172A!important;border:4px solid #1F2937!important}
         .styled-table tbody td{background:#FFFFFF!important;color:#0F172A!important;border:4px solid #1F2937!important}
-        .styled-table tbody td:first-child{background:#F1F5F9!important;color:#0F172A!important}  /* left col = header */
+        .styled-table tbody td:first-child{background:#F1F5F9!important;color:#0F172A!important}
 
-        /* DARK THEME */
+        /* DARK */
         @media (prefers-color-scheme: dark){
           .styled-table{border:4px solid #94A3B8!important;background:#0B1220!important}
           .styled-table thead th{background:#0E1A2B!important;color:#F8FAFC!important;border:4px solid #94A3B8!important}
           .styled-table tbody td{background:#0B1220!important;color:#E5E7EB!important;border:4px solid #94A3B8!important}
-          .styled-table tbody td:first-child{background:#0E1A2B!important;color:#F8FAFC!important}  /* left col = header */
+          .styled-table tbody td:first-child{background:#0E1A2B!important;color:#F8FAFC!important}
         }
-        
-/* Tooltip header-only */
-.styled-table th[data-tip]{ position:relative; overflow:visible; }
-.styled-table th[data-tip]:hover::before{
-  content:"";
-  position:absolute;
-  left:50%; top:calc(100% + 2px);
-  transform:translateX(-50%);
-  border:6px solid transparent;
-  border-bottom-color: rgba(15,15,20,.98);
-  z-index:99998; pointer-events:none;
-}
-.styled-table th[data-tip]:hover::after{
-  content: attr(data-tip);
-  position:absolute;
-  left:50%; top:calc(100% + 14px);
-  transform:translateX(-50%);
-  z-index:99999; background: rgba(15,15,20,.98); color:#fff;
-  padding:12px 14px; border-radius:10px; border:1px solid rgba(255,255,255,.12);
-  display:block; width:max-content; min-width:16ch; max-width:min(68ch, 80vw);
-  white-space:normal; word-break:normal; overflow-wrap:break-word;
-  line-height:1.35rem; font-size:.95rem; box-shadow:0 10px 26px rgba(0,0,0,.40);
-  pointer-events:none;
-}
-/* Disable tooltips in data cells */
-.styled-table td[data-tip],
-.styled-table td [data-tip]{ position:static; }
-.styled-table td[data-tip]::before,
-.styled-table td[data-tip]::after,
-.styled-table td [data-tip]::before,
-.styled-table td [data-tip]::after{
-  content:none !important; display:none !important;
-}
 
-</style>
+        /* Tooltip header-only */
+        .styled-table th[data-tip]{ position:relative; overflow:visible; }
+        .styled-table th[data-tip]:hover::before{
+          content:""; position:absolute; left:50%; top:calc(100% + 2px); transform:translateX(-50%);
+          border:6px solid transparent; border-bottom-color: rgba(15,15,20,.98); z-index:99998; pointer-events:none;
+        }
+        .styled-table th[data-tip]:hover::after{
+          content: attr(data-tip); position:absolute; left:50%; top:calc(100% + 14px); transform:translateX(-50%);
+          z-index:99999; background: rgba(15,15,20,.98); color:#fff; padding:12px 14px; border-radius:10px;
+          border:1px solid rgba(255,255,255,.12); width:max-content; min-width:16ch; max-width:min(68ch, 80vw);
+          white-space:normal; word-break:normal; overflow-wrap:break-word; line-height:1.35rem; font-size:.95rem; box-shadow:0 10px 26px rgba(0,0,0,.40); pointer-events:none;
+        }
+        .styled-table td[data-tip], .styled-table td [data-tip]{ position:static; }
+        .styled-table td[data-tip]::before, .styled-table td[data-tip]::after, .styled-table td [data-tip]::before, .styled-table td [data-tip]::after{ content:none!important; display:none!important; }
+
+        /* Auto-scale + inner scroll */
+        .table-zoom{transform:scale(var(--tbl-zoom,.95));transform-origin:top left;display:inline-block;width:max-content}
+        .table-wrap{max-width:100%}
+        </style>
         """,
         unsafe_allow_html=True
     )
@@ -177,10 +162,9 @@ def _inject_tooltips_on_th(html_table: str, header_tooltips: dict) -> str:
     return html_table[:m.start(1)] + new_head + html_table[m.end(1):]
 
 
-def display_table(df, bold_first_col=True, fixed_height=420, header_tooltips=None):
+def display_table(df, bold_first_col=True, fixed_height=420, header_tooltips=None, zoom=0.95, scroll_x=None):
     html_tbl = to_html_table(df, bold_first_col=bold_first_col)
 
-    # Ensure CSS class for tooltip selectors
     if '<table' in html_tbl:
         open_tag = html_tbl.split('>', 1)[0]
         if 'class=' not in open_tag:
@@ -188,14 +172,21 @@ def display_table(df, bold_first_col=True, fixed_height=420, header_tooltips=Non
         elif 'styled-table' not in open_tag:
             html_tbl = html_tbl.replace('class="', 'class="styled-table ', 1)
 
-    # Remove any data-tip remnants (avoid tooltips on <td>)
     html_tbl = re.sub(r'\sdata-tip="[^"]*"', '', html_tbl)
-
-    # Header-only tooltips
     if header_tooltips:
         html_tbl = _inject_tooltips_on_th(html_tbl, header_tooltips)
 
-    st.markdown(f'<div class="fixed-height" style="max-height:{fixed_height}px">{html_tbl}</div>', unsafe_allow_html=True)
+    # Tự quyết định scroll ngang nếu không chỉ định
+    if scroll_x is None:
+        try:
+            ncols = int(getattr(df, "shape", [0,0])[1])
+            header_len = max((len(str(c)) for c in df.columns), default=0)
+            scroll_x = (ncols >= 9) or (header_len >= 22)
+        except Exception:
+            scroll_x = False
+
+    wrap_style = "max-width:100%; " + ("overflow-x:auto;padding-bottom:6px;" if scroll_x else "overflow-x:visible;")
+    st.markdown(f'<div class="table-wrap" style="{wrap_style}"><div class="table-zoom" style="--tbl-zoom:{zoom}">{html_tbl}</div></div>', unsafe_allow_html=True)
 
 def load_metadata():
     try:
@@ -223,6 +214,34 @@ def summarize_weights(weights: dict | None):
     norm = {k: v / total for k, v in weights.items()}
     top = sorted(norm.items(), key=lambda x: x[1], reverse=True)[:5]
     return {"count": len(norm), "top": top}
+
+def _load_user_weights():
+    paths = [F("user_weights.yaml"), F("user_weight.yaml"), "user_weights.yaml", "user_weight.yaml"]
+    for path in paths:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                obj = yaml.safe_load(f) or {}
+                if isinstance(obj, dict):
+                    return obj
+        except FileNotFoundError:
+            continue
+        except Exception:
+            continue
+    return {}
+
+def _save_user_weights(all_user: dict):
+    path = F("user_weights.yaml")
+    with open(path, "w", encoding="utf-8") as f:
+        yaml.safe_dump(all_user, f, allow_unicode=True, sort_keys=False)
+
+def _next_clone_name(base: str, existing):
+    i = 1
+    candidate = f"{base}_{i}"
+    lowered = {str(s).lower() for s in existing}
+    while candidate.lower() in lowered:
+        i += 1
+        candidate = f"{base}_{i}"
+    return candidate
 
 def show_home_summary():
     st.subheader("Tóm tắt kết quả")
@@ -525,34 +544,13 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
     st.header("Trang 3: Tạo và Cập nhật Trọng số Mô hình")
 
     all_weights = {}
-    weights_file = "weights.yaml"
-    if os.path.exists(weights_file):
+    if os.path.exists("weights.yaml"):
         try:
-            with open(weights_file, "r", encoding="utf-8") as f:
+            with open("weights.yaml", "r", encoding="utf-8") as f:
                 all_weights = yaml.safe_load(f) or {}
         except Exception as e:
             st.error(f"Lỗi khi đọc 'weights.yaml': {e}")
             all_weights = {}
-
-    model_list = ["Tạo mô hình mới", "Office", "Warehouse", "Factory"]
-    st.subheader("1. Lựa chọn Kịch bản (Scenario)")
-
-    default_index_ahp = 0
-    if 'scenario_selectbox' in st.session_state and st.session_state.scenario_selectbox in model_list:
-        default_index_ahp = model_list.index(st.session_state.scenario_selectbox)
-
-    def on_scenario_change():
-        st.session_state.selected_model_for_topsis = None
-        st.session_state.last_saved_model = None
-        st.session_state.last_saved_weights = None
-
-    selected_scenario = st.selectbox(
-        "Chọn một kịch bản có sẵn hoặc tạo mới:",
-        model_list,
-        index=default_index_ahp,
-        key="scenario_selectbox",
-        on_change=on_scenario_change
-    )
 
     def _load_default_weights():
         paths = [F("defaultweights.yaml"), "defaultweights.yaml"]
@@ -566,89 +564,134 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
                 continue
         return {}
 
-    def save_user_weights_to_yaml(weights_dict: dict, model_name: str):
-        path = F("user_weight.yaml")
-        try:
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f) or {}
-            except FileNotFoundError:
-                data = {}
-            if not isinstance(data, dict):
-                data = {}
-            data[str(model_name)] = weights_dict
-            with open(path, "w", encoding="utf-8") as f:
-                yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
-            return True
-        except Exception as e:
-            st.error(f"Lỗi lưu user_weight.yaml: {e}")
-            return False
+    st.subheader("1. Lựa chọn Kịch bản (Scenario)")
+    model_list = ["Tạo mô hình mới", "Office", "Warehouse", "Factory"]
+    user_models = _load_user_weights()
+    user_names = list(user_models.keys())
+    model_list = model_list + user_names
 
-    def quick_customize_editor(current_weights: dict, scenario_name: str):
-        st.write("Tùy chỉnh nhanh: chỉnh sửa trọng số rồi lưu.")
-        ed = pd.DataFrame([(k, float(v)) for k, v in current_weights.items()], columns=["Tiêu chí", "Trọng số"])
-        ed = st.data_editor(ed, num_rows="dynamic", use_container_width=True, key=f"quick_edit_{scenario_name}")
-        if isinstance(ed, pd.DataFrame) and not ed.empty:
-            try:
-                edited = {str(row["Tiêu chí"]): float(row["Trọng số"]) for _, row in ed.iterrows()}
-            except Exception:
-                edited = current_weights
-        else:
-            edited = current_weights
+    def on_scenario_change():
+        st.session_state.selected_model_for_topsis = None
+        st.session_state.last_saved_model = None
+        st.session_state.last_saved_weights = None
 
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("Lưu bộ tuỳ chỉnh (user_weight.yaml)", use_container_width=True, key=f"btn_save_user_{scenario_name}"):
-                if save_user_weights_to_yaml(edited, scenario_name):
-                    st.success("Đã lưu user_weight.yaml")
-        with c2:
-            if st.button("Tiếp tục qua trang phân tích", use_container_width=True, key=f"btn_next_{scenario_name}"):
-                st.session_state["selected_model_for_topsis"] = scenario_name
-                st.session_state["selected_weights_for_topsis"] = edited
-                go("Phân tích Địa điểm (TOPSIS)")
+    default_index_ahp = 0
+    if 'scenario_selectbox' in st.session_state and st.session_state.scenario_selectbox in model_list:
+        default_index_ahp = model_list.index(st.session_state.scenario_selectbox)
 
-    if selected_scenario not in ("--- Tạo mô hình mới ---", "Tạo mô hình mới"):
+    selected_scenario = st.selectbox(
+        "Chọn một kịch bản có sẵn hoặc tạo mới:",
+        model_list, index=default_index_ahp,
+        key="scenario_selectbox", on_change=on_scenario_change
+    )
+
+    # === Trường hợp Office/Warehouse/Factory hoặc user model đã có ===
+    if selected_scenario not in ("Tạo mô hình mới",):
         st.subheader(f"Trọng số hiện tại: **{selected_scenario}**")
+
         defaults = _load_default_weights()
-        key_lower = str(selected_scenario).strip().lower()
+        key_lower = selected_scenario.strip().lower()
+
+        # ưu tiên weights.yaml; nếu không có thì lấy mặc định
         current_weights = all_weights.get(selected_scenario, {})
-        if not current_weights and key_lower in ("office", "warehouse", "factory"):
+        if not current_weights and key_lower in ("office","warehouse","factory"):
             current_weights = defaults.get(key_lower, {})
 
-        if current_weights:
-            st.session_state["_default_display_model"] = selected_scenario
-            st.session_state["_default_display_weights"] = current_weights
-            dfw = pd.DataFrame([(nice_name(k), v) for k, v in current_weights.items()], columns=["Tiêu chí", "Trọng số"]).sort_values("Trọng số", ascending=False).reset_index(drop=True)
+        # nếu là user model thì lấy từ user_weights.yaml
+        if not current_weights and selected_scenario in user_models:
+            current_weights = user_models[selected_scenario]
+
+        if not current_weights:
+            st.warning("Mô hình này chưa có trọng số.")
+            st.info("Bật Customize để tự tạo trọng số cho kịch bản này.")
+
+        else:
+            dfw = (pd.DataFrame([(nice_name(k), v) for k, v in current_weights.items()],
+                                columns=["Tiêu chí","Trọng số"])
+                   .sort_values("Trọng số", ascending=False).reset_index(drop=True))
             dfw = add_index_col(dfw, "STT")
             display_table(dfw, bold_first_col=True, fixed_height=300)
 
-            customize_toggle = st.toggle("Customize", value=False, key="default_customize_toggle")
-            if customize_toggle:
-                if "show_customization_tabs" in globals():
-                    temp_dict = {selected_scenario: current_weights}
-                    show_customization_tabs(temp_dict, model_name_placeholder=selected_scenario)
-                else:
-                    quick_customize_editor(current_weights, selected_scenario)
+        customize_toggle = st.toggle("Customize", value=False, key="default_customize_toggle")
+        if customize_toggle:
+            edit_dict = dict(current_weights)
+            st.write("Tùy chỉnh nhanh: clone trọng số rồi lưu thành bản mới.")
+            ed = st.data_editor(pd.DataFrame([(k, float(v)) for k, v in edit_dict.items()],
+                                             columns=["Tiêu chí","Trọng số"]),
+                                num_rows="dynamic", use_container_width=True,
+                                key=f"quick_edit_clone_{selected_scenario}")
+            if isinstance(ed, pd.DataFrame) and not ed.empty:
+                try:
+                    edited = {str(row["Tiêu chí"]): float(row["Trọng số"]) for _, row in ed.iterrows()}
+                except Exception:
+                    edited = edit_dict
             else:
+                edited = edit_dict
+
+            all_names = user_names + list(all_weights.keys())
+            new_name = st.text_input("Tên mô hình mới", value=_next_clone_name(selected_scenario, all_names))
+            colA, colB = st.columns(2)
+            with colA:
+                if st.button("Lưu vào user_weights.yaml", use_container_width=True):
+                    users = _load_user_weights()
+                    users[new_name] = edited
+                    _save_user_weights(users)
+                    st.success(f"Đã lưu {new_name} vào user_weights.yaml")
+                    st.session_state.scenario_selectbox = new_name
+                    st.rerun()
+            with colB:
                 if st.button("Tiếp tục qua trang phân tích", use_container_width=True):
-                    st.session_state["selected_model_for_topsis"] = selected_scenario
-                    st.session_state["selected_weights_for_topsis"] = current_weights
+                    try:
+                        save_weights_to_yaml(edited, new_name)  # ghi vào weights.yaml để TOPSIS đọc
+                    except Exception:
+                        pass
+                    st.session_state.selected_model_for_topsis = new_name
+                    st.session_state.selected_weights_for_topsis = edited
                     go("Phân tích Địa điểm (TOPSIS)")
         else:
-            st.warning("Mô hình này chưa có trọng số.")
-            st.info("Bật Customize để tự tạo trọng số cho kịch bản này.")
-            if st.toggle("Customize", value=True, key="default_customize_toggle_empty"):
-                if "show_customization_tabs" in globals():
-                    show_customization_tabs({}, model_name_placeholder=selected_scenario)
-                else:
-                    quick_customize_editor({}, selected_scenario)
+            if st.button("Tiếp tục qua trang phân tích", use_container_width=True):
+                try:
+                    save_weights_to_yaml(current_weights, selected_scenario)
+                except Exception:
+                    pass
+                st.session_state.selected_model_for_topsis = selected_scenario
+                st.session_state.selected_weights_for_topsis = current_weights
+                go("Phân tích Địa điểm (TOPSIS)")
+
+    # === “Tạo mô hình mới” ===
     else:
         st.info("Tạo mô hình mới.")
-        if "show_customization_tabs" in globals():
-            show_customization_tabs(all_weights)
-        else:
-            st.warning("Trình tuỳ chỉnh chi tiết không khả dụng; dùng bản chỉnh nhanh.")
-            quick_customize_editor({}, "NewModel")
+        st.write("Nhập tên và trọng số, lưu vào user_weights.yaml hoặc chạy phân tích ngay.")
+        ed = st.data_editor(pd.DataFrame(columns=["Tiêu chí","Trọng số"]),
+                            num_rows="dynamic", use_container_width=True,
+                            key="editor_new_model")
+        new_dict = {}
+        if isinstance(ed, pd.DataFrame) and not ed.empty:
+            try:
+                new_dict = {str(row["Tiêu chí"]): float(row["Trọng số"]) for _, row in ed.iterrows() if str(row["Tiêu chí"]).strip()}
+            except Exception:
+                new_dict = {}
+        new_name = st.text_input("Tên mô hình mới", value="Custom_1")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Lưu vào user_weights.yaml", use_container_width=True):
+                users = _load_user_weights()
+                if new_name in users:
+                    new_name = _next_clone_name(new_name, list(users.keys()))
+                users[new_name] = new_dict
+                _save_user_weights(users)
+                st.success(f"Đã lưu {new_name} vào user_weights.yaml")
+                st.session_state.scenario_selectbox = new_name
+                st.rerun()
+        with c2:
+            if st.button("Tiếp tục qua trang phân tích", use_container_width=True):
+                try:
+                    save_weights_to_yaml(new_dict, new_name)
+                except Exception:
+                    pass
+                st.session_state.selected_model_for_topsis = new_name
+                st.session_state.selected_weights_for_topsis = new_dict
+                go("Phân tích Địa điểm (TOPSIS)")
 # =============== PAGE 4: TOPSIS ===============
 elif page == "Phân tích Địa điểm (TOPSIS)":
     st.header("Trang 4: Xếp hạng Địa điểm TOPSIS")
