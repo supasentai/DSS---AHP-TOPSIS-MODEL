@@ -54,7 +54,7 @@
       "type": "benefit",
       "description": "Mức độ hoàn thiện đường xá. điện nước. khả năng xe tải ra/vào. tình trạng ngập. Cao → dễ vận hành. ít rủi ro kỹ thuật.",
       "source": "Đánh giá chủ quan của nhóm dự án dựa trên quan sát thực địa / kiến thức địa phương"
-  }
+  },
   "amenity_score": {
       "display_name": "Tiện ích xung quanh",
       "unit": "thang điểm 1–10",
@@ -77,6 +77,7 @@
       "source": "Đếm thủ công (Google Maps. khảo sát)"
   }
 }
+
 
 
 
