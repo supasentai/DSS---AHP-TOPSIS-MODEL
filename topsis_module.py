@@ -1,102 +1,130 @@
-import pandas as pd
-import numpy as np
-import json
 import os
-import yaml
+import json
+import numpy as np
+import pandas as pd
 
 
-def load_metadata(json_path):
-    """Tải metadata và trích xuất loại tiêu chí (benefit/cost)."""
+def load_metadata(json_path: str) -> dict | None:
+    """
+    Đọc metadata và lấy loại tiêu chí (benefit/cost).
+
+    Parameters
+    ----------
+    json_path : str
+        Đường dẫn file metadata.json.
+
+    Returns
+    -------
+    dict | None
+        {tên_tiêu_chí: 'benefit' | 'cost'} hoặc None nếu lỗi.
+    """
     try:
-        with open(json_path, 'r', encoding='utf-8-sig') as f:
-            metadata = json.load(f)
-        return {k: v.get('type') for k, v in metadata.items() if v.get('type') in ['benefit', 'cost']}
+        with open(json_path, "r", encoding="utf-8-sig") as f:
+            meta = json.load(f)
+        return {k: v.get("type") for k, v in meta.items() if v.get("type") in ("benefit", "cost")}
     except Exception as e:
         print(f"Lỗi khi tải metadata: {e}")
         return None
 
 
-def run_topsis_model(data_path, json_path, analysis_type, all_criteria_weights):
+def run_topsis_model(
+    data_path: str,
+    json_path: str,
+    analysis_type: str,
+    all_criteria_weights: dict,
+) -> pd.DataFrame | None:
     """
-    Hàm chính TOPSIS, sẽ return DataFrame VÀ lưu kết quả ra file CSV.
-    """
-    print(f"\n--- KHỞI CHẠY MÔ HINH TOPSIS CHO: {analysis_type.upper()} ---")
+    Chạy TOPSIS cho `analysis_type` với bộ trọng số trong `all_criteria_weights`.
+    Trả về DataFrame kết quả và lưu ra `data/ranking_result_{analysis_type}.xlsx`
+    (trừ khi tên mô hình chứa 'temp').
 
-    criteria_weights = all_criteria_weights.get(analysis_type)
-    if not criteria_weights:
-        print(f"LỖI: Không tìm thấy trọng số cho '{analysis_type}'.")
+    Parameters
+    ----------
+    data_path : str
+        Đường dẫn file dữ liệu (Excel).
+    json_path : str
+        Đường dẫn metadata.json.
+    analysis_type : str
+        Tên mô hình trọng số cần chạy.
+    all_criteria_weights : dict
+        Mapping {model_name: {criterion: weight}}.
+
+    Returns
+    -------
+    pd.DataFrame | None
+        Bảng xếp hạng gồm: Tên phường, Điểm TOPSIS (0-1), Rank.
+    """
+    print(f"\n--- CHẠY TOPSIS: {analysis_type.upper()} ---")
+
+    weights = all_criteria_weights.get(analysis_type)
+    if not weights:
+        print(f"Lỗi: Không tìm thấy trọng số cho '{analysis_type}'.")
         return None
 
-    criteria_types = load_metadata(json_path)
-    if criteria_types is None:
+    crit_types = load_metadata(json_path)
+    if crit_types is None:
         return None
 
     try:
         df = pd.read_excel(data_path)
-        # Chỉ giữ lại các tiêu chí có trong metadata VÀ trọng số
-        valid_criteria = [c for c in criteria_types.keys() if c in criteria_weights and c in df.columns]
+        # Giữ tiêu chí có trong metadata + trọng số + cột dữ liệu
+        valid_criteria = [c for c in crit_types if c in weights and c in df.columns]
+        weights = {k: v for k, v in weights.items() if k in valid_criteria}
 
-        # Lọc lại criteria_weights chỉ với các tiêu chí hợp lệ
-        criteria_weights = {k: v for k, v in criteria_weights.items() if k in valid_criteria}
-
-        df_locations = df[['ward']].copy()
+        df_locations = df[["ward"]].copy()
         df_data = df[valid_criteria].astype(float)
     except Exception as e:
-        print(f"Lỗi khi đọc file CSV hoặc xử lý dữ liệu: {e}")
+        print(f"Lỗi khi đọc dữ liệu: {e}")
         return None
 
-    weights_series = pd.Series(criteria_weights).loc[df_data.columns]
+    # Bảo toàn thứ tự cột khi nhân trọng số
+    w_series = pd.Series(weights).loc[df_data.columns]
 
-    # --- BƯỚC 1: CHUẨN HÓA ---
-    sum_of_squares = (df_data ** 2).sum() ** 0.5
-    sum_of_squares.replace(0, 1e-6, inplace=True)
-    df_norm = df_data / sum_of_squares
+    # 1) Chuẩn hóa vector theo cột
+    denom = (df_data ** 2).sum() ** 0.5
+    denom.replace(0, 1e-6, inplace=True)
+    df_norm = df_data / denom
 
-    # --- BƯỚC 2: NHÂN TRỌNG SỐ ---
-    df_weighted = df_norm * weights_series
+    # 2) Áp trọng số
+    df_weighted = df_norm * w_series
 
-    # --- BƯỚC 3: TÌM GIẢI PHÁP LÝ TƯỞNG ---
-    ideal_best = {}
-    ideal_worst = {}
+    # 3) Ideal best/worst theo loại tiêu chí
+    ideal_best, ideal_worst = {}, {}
     for col in df_weighted.columns:
-        c_type = criteria_types.get(col)
-        if c_type == 'benefit':
+        t = crit_types.get(col)
+        if t == "benefit":
             ideal_best[col] = df_weighted[col].max()
             ideal_worst[col] = df_weighted[col].min()
-        elif c_type == 'cost':
+        elif t == "cost":
             ideal_best[col] = df_weighted[col].min()
             ideal_worst[col] = df_weighted[col].max()
 
-    # --- BƯỚC 4: TÍNH KHOẢNG CÁCH ---
-    ideal_best_series = pd.Series(ideal_best)
-    ideal_worst_series = pd.Series(ideal_worst)
-    dist_to_best = np.sqrt(((df_weighted - ideal_best_series) ** 2).sum(axis=1))
-    dist_to_worst = np.sqrt(((df_weighted - ideal_worst_series) ** 2).sum(axis=1))
+    # 4) Khoảng cách tới ideal
+    ib = pd.Series(ideal_best)
+    iw = pd.Series(ideal_worst)
+    d_best = np.sqrt(((df_weighted - ib) ** 2).sum(axis=1))
+    d_wrst = np.sqrt(((df_weighted - iw) ** 2).sum(axis=1))
 
-    # --- BƯỚC 5: TÍNH ĐIỂM TƯƠNG ĐỐI ---
-    total_distance = dist_to_best + dist_to_worst
-    total_distance.replace(0, 1e-6, inplace=True)
-    closeness_score = dist_to_worst / total_distance
+    # 5) Điểm gần lý tưởng
+    denom = d_best + d_wrst
+    denom.replace(0, 1e-6, inplace=True)
+    score = d_wrst / denom
 
-    # --- BƯỚC 6: XẾP HẠNG VÀ BÁO CÁO ---
-    df_report = df_locations.copy()
-    df_report['TOPSIS_Score'] = closeness_score.values
-    df_report = df_report.sort_values(by='TOPSIS_Score', ascending=False)
-    df_report['Rank'] = range(1, len(df_report) + 1)
+    # 6) Xếp hạng và báo cáo
+    out = df_locations.copy()
+    out["TOPSIS_Score"] = score.values
+    out = out.sort_values(by="TOPSIS_Score", ascending=False)
+    out["Rank"] = range(1, len(out) + 1)
 
-    report_df = df_report.rename(columns={'ward': 'Tên phường', 'TOPSIS_Score': 'Điểm TOPSIS (0-1)'})
+    report_df = out.rename(columns={"ward": "Tên phường", "TOPSIS_Score": "Điểm TOPSIS (0-1)"})
 
-    # --- CẬP NHẬT MỚI: LƯU KẾT QUẢ RA FILE ---
-    # Chỉ lưu file nếu tên mô hình không phải là tên tạm thời (what-if)
+    # Lưu Excel nếu không phải mô hình tạm
     if "temp" not in analysis_type:
-        output_filename = f"data/ranking_result_{analysis_type}.xlsx"
+        fn = f"data/ranking_result_{analysis_type}.xlsx"
         try:
-            # Dùng utf-8-sig để Excel đọc CSV tiếng Việt không bị lỗi
-            report_df.to_excel(output_filename)
-            print(f"Đã lưu kết quả vào file: {output_filename}")
+            report_df.to_excel(fn)  # giữ nguyên hành vi: mặc định có index
+            print(f"Đã lưu: {fn}")
         except Exception as e:
-            print(f"Lỗi khi lưu file: {e}")  # Vẫn tiếp tục chạy dù lưu file lỗi
+            print(f"Lỗi khi lưu file: {e}")
 
-    # Trả về DataFrame để Streamlit sử dụng
     return report_df
-
