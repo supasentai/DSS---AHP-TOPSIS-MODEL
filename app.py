@@ -31,6 +31,17 @@ import json
 import altair as alt
 import pydeck as pdk
 
+# --- Save notification helper ---
+def _notify_saved(ok: bool):
+    if ok:
+        try:
+            st.toast("Đã lưu", icon="✅")
+        except Exception:
+            st.success("Đã lưu")
+    else:
+        st.error("Lưu thất bại.")
+
+
 # --- Import các module chức năng ---
 try:
     from ahp_module import calculate_ahp_weights, save_weights_to_yaml
@@ -125,6 +136,34 @@ def _next_clone_name(base_name, existing_names):
         cand = f"{base}_{i}"
     return cand
 
+def _ui_delete_features(selected_scenario: str, current_weights: dict):
+    st.markdown("**Xóa tiêu chí khỏi kịch bản**")
+    features = list(current_weights.keys())
+    del_opts = [f for f in features if f not in ("ward", "ward_id")]
+    sel = st.multiselect("Chọn tiêu chí cần xóa", options=del_opts, key=f"del_feats_{selected_scenario}")
+    if st.button("Xóa feature đã chọn", disabled=(len(sel) == 0), key=f"btn_del_feats_{selected_scenario}"):
+        to_rm = set(sel)
+        new_w = {k: v for k, v in current_weights.items() if k not in to_rm}
+        if len(new_w) == 0:
+            st.error("Không thể xóa hết tiêu chí. Cần ít nhất 1 tiêu chí.")
+            return
+        s = float(sum(new_w.values()))
+        if s <= 0:
+            # nếu tổng = 0 thì phân bổ đều
+            even = 1.0 / len(new_w)
+            new_w = {k: even for k in new_w}
+        else:
+            new_w = {k: float(v)/s for k, v in new_w.items()}
+        try:
+            ok, _ = save_weights_to_yaml(new_w, selected_scenario, filename=F("data/weights.yaml"))
+        except Exception:
+            ok = False
+        _notify_saved(ok)
+        # reset lưới pairwise cache để tránh lệch kích thước sau khi xóa feature
+        st.session_state.pop(f"pw_edit_{selected_scenario}", None)
+        st.rerun()
+
+
 def _load_defaultweights_all(path="data/weights.yaml"):
     import yaml, os
     if not os.path.exists(path):
@@ -211,14 +250,15 @@ def _inject_tooltips_on_th(html_table: str, header_tooltips: dict) -> str:
 def _load_all_weights_for_options():
     import yaml, os
     out = {}
-    p1 = F("defaultweights.yaml")
-    p2 = F("weights.yaml")
-    for p in (p1, p2):
-        if os.path.exists(p):
-            with open(p, "r", encoding="utf-8") as f:
+    path = "data/weights.yaml"
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
                 d = yaml.safe_load(f) or {}
                 if isinstance(d, dict):
                     out.update({str(k): d[k] for k in d.keys()})
+        except Exception:
+            pass
     return out  # dict tên -> weights
 
 def _scenario_options():
@@ -248,12 +288,72 @@ def display_table(df, bold_first_col=True, fixed_height=420, header_tooltips=Non
         unsafe_allow_html=True
     )
 
+def _direct_rating_2col(features: list[str], defaults: dict[str, int], key_prefix: str) -> dict[str, int]:
+    """Render chấm điểm 1–10 theo 2 cột, trả về dict feature->score."""
+    cols = st.columns(2)
+    scores: dict[str, int] = {}
+    for i, f in enumerate(features):
+        with cols[i % 2]:
+            scores[f] = _block10_editor(
+                label=nice_name(f),
+                default=int(defaults.get(f, 5)),
+                key=f"{key_prefix}_{f}",
+            )
+    return scores
+
 def load_metadata():
     try:
         with open(F("metadata.json"), "r", encoding="utf-8-sig") as f:
             return json.load(f)
     except Exception:
         return {}
+
+def pie_compare_weight(original_weights: dict, new_weights: dict,
+                       title_left="1. Gốc", title_right="2. Mới"):
+    import pandas as pd, altair as alt
+
+    # domain cố định theo Gốc để hai pie thẳng hàng
+    w0 = pd.DataFrame({
+        "criterion": list(original_weights.keys()),
+        "weight": [float(v) for v in original_weights.values()]
+    }).sort_values("weight", ascending=False).reset_index(drop=True)
+    domain = w0["criterion"].tolist()
+    w0["weight"] = w0["weight"] / (w0["weight"].sum() or 1.0)
+    w0["pct"] = w0["weight"] * 100
+
+    w1 = pd.DataFrame({"criterion": domain}).merge(
+        pd.DataFrame({
+            "criterion": list(new_weights.keys()),
+            "weight": [float(v) for v in new_weights.values()]
+        }),
+        on="criterion", how="left"
+    ).fillna(0.0)
+    w1["weight"] = w1["weight"] / (w1["weight"].sum() or 1.0)
+    w1["pct"] = w1["weight"] * 100
+
+    def _pie(df, title):
+        base = alt.Chart(df).encode(
+            theta=alt.Theta("weight:Q", stack=True),
+            color=alt.Color("criterion:N",
+                           sort=domain,
+                           scale=alt.Scale(domain=domain)),
+            order=alt.Order("criterion:N", sort="ascending"),
+        )
+        # KHÔNG dùng startAngle
+        pie = base.mark_arc(innerRadius=70, outerRadius=130)
+
+        # nhãn ngoài, ẩn lát <3% để đỡ rối
+        labels = (base.transform_filter(alt.datum.pct >= 3)
+                        .mark_text(radius=160, size=16, color="#e6e6e6")
+                        .encode(text=alt.Text("pct:Q", format=".1f")))
+
+        return (pie + labels).properties(
+            width=420, height=420,
+            title=alt.TitleParams(title, fontSize=24, fontWeight="bold",
+                                  anchor="middle")
+        )
+
+    return _pie(w0, title_left) | _pie(w1, title_right)
 
 def criteria_display_map(df_cols, meta):
     out = {}
@@ -572,213 +672,303 @@ elif page == "Tổng quan Dữ liệu":
 
 # =============== PAGE 3: AHP Customize ===============
 
+
 elif page == "Tùy chỉnh Trọng số (AHP)":
     st.header("Trang 3: Tạo và Cập nhật Trọng số Mô hình")
+    import os, yaml, pandas as pd, numpy as _np
 
+    _SAATY_LABELS = ["1/9","1/8","1/7","1/6","1/5","1/4","1/3","1/2","1","2","3","4","5","6","7","8","9"]
+    _SAATY_VALUES = [1/9,1/8,1/7,1/6,1/5,1/4,1/3,1/2,1,2,3,4,5,6,7,8,9]
+    _VAL_BY_LABEL = {lab: val for lab, val in zip(_SAATY_LABELS, _SAATY_VALUES)}
+
+    def _union_criteria_from_weights(weights_yaml_path: str = F("data/weights.yaml")) -> list[str]:
+        opts = set()
+        if os.path.exists(weights_yaml_path):
+            try:
+                with open(weights_yaml_path, "r", encoding="utf-8") as f:
+                    all_w = yaml.safe_load(f) or {}
+                    if isinstance(all_w, dict):
+                        for _, w in all_w.items():
+                            if isinstance(w, dict):
+                                for k in w.keys():
+                                    opts.add(str(k))
+            except Exception:
+                pass
+        return sorted(opts)
+
+    def _normalize_columns(A):
+        A = _np.array(A, dtype=float)
+        s = A.sum(axis=0); s[s==0] = 1.0
+        return A / s
+
+
+    def _pairwise_matrix_editor(criteria: list[str], session_key: str):
+        import pandas as _pd
+        n = len(criteria)
+
+        key_df = f"{session_key}_df"  # CHỈ dùng cho widget (không ghi vào session_state[key_df])
+        store_key = f"{session_key}_store"  # Dùng để lưu bản sao người dùng chỉnh
+
+        # Khởi tạo nguồn dữ liệu cho editor từ store_key (không phải key_df)
+        if store_key in st.session_state:
+            df = st.session_state[store_key].copy()
+            if not isinstance(df, _pd.DataFrame) or df.shape != (n, n):
+                df = _pd.DataFrame(
+                    [["—" if i == j else ("" if i > j else "1") for j in range(n)] for i in range(n)],
+                    columns=[nice_name(c) for c in criteria],
+                    index=[nice_name(c) for c in criteria],
+                )
+        else:
+            df = _pd.DataFrame(
+                [["—" if i == j else ("" if i > j else "1") for j in range(n)] for i in range(n)],
+                columns=[nice_name(c) for c in criteria],
+                index=[nice_name(c) for c in criteria],
+            )
+
+        col_cfg = {
+            nice_name(c): st.column_config.SelectboxColumn(
+                label=nice_name(c), options=_SAATY_LABELS, width="small"
+            )
+            for c in criteria
+        }
+        st.caption("Nhập trên tam giác trên. Ô '—' = 1. Tam giác dưới tự động nghịch đảo.")
+        df_edit = st.data_editor(
+            df, hide_index=False, use_container_width=True,
+            num_rows="fixed", column_config=col_cfg, key=key_df
+        )
+
+        # LƯU vào store_key, KHÔNG ghi vào key_df
+        st.session_state[store_key] = df_edit.copy()
+
+        # Kết xuất ma trận
+        A = _np.ones((n, n), dtype=float)
+        for i in range(n):
+            for j in range(n):
+                if i == j:
+                    A[i, j] = 1.0
+                elif i < j:
+                    lab = str(df_edit.iloc[i, j]).strip()
+                    if lab in _VAL_BY_LABEL:
+                        A[i, j] = float(_VAL_BY_LABEL[lab])
+                        A[j, i] = 1.0 / A[i, j]
+        return A
+
+    def _block10_editor(label: str, default: int, key: str):
+        try:
+            val = st.segmented_control(label=label, options=list(range(1, 11)), default=int(default), format_func=str, key=key)
+        except Exception:
+            val = st.radio(label, list(range(1, 11)), index=int(default)-1, horizontal=True, key=key)
+        v = int(val)
+        filled = "".join(f'<span class="sq {"filled" if i <= v else ""}"></span>' for i in range(1, 11))
+        st.markdown(f'<div class="ahp-bar">{filled}</div>', unsafe_allow_html=True)
+        return v
+
+    st.markdown(
+        """
+        <style>
+        thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
+        .stDataFrame table { table-layout: fixed; }
+        .stDataFrame [data-testid="stDataFrameResizable"] { overflow: hidden !important; }
+        [data-testid="stSegmentedControl"] { max-width: 360px; }
+        [data-testid="stSegmentedControl"] label { border-radius: 0 !important; min-width: 32px; height: 32px; line-height: 28px; padding: 0; text-align: center; }
+        .ahp-bar { display: inline-flex; gap: 6px; margin-top: 6px; }
+        .ahp-bar .sq { width: 14px; height: 14px; border: 1px solid rgba(255,255,255,0.35); }
+        .ahp-bar .sq.filled { background: rgba(255, 75, 75, 0.55); border-color: rgba(255, 75, 75, 0.75); }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    weights_file = F("data/weights.yaml")
     all_weights = {}
-    weights_file = "data/weights.yaml"
     if os.path.exists(weights_file):
         try:
             with open(weights_file, "r", encoding="utf-8") as f:
                 all_weights = yaml.safe_load(f) or {}
         except Exception as e:
-            st.error(f"Lỗi khi đọc 'data/weights.yaml': {e}")
-            all_weights = {}
+            st.error(f"Lỗi đọc weights.yaml: {e}")
 
-    model_list = ["Tạo mô hình mới", "Office", "Warehouse", "Factory"]
     st.subheader("1. Lựa chọn Kịch bản (Scenario)")
+    model_list = ["Tạo mô hình mới"] + list(all_weights.keys())
 
-    default_index_ahp = 0
-    if 'scenario_selectbox' in st.session_state and st.session_state.scenario_selectbox in model_list:
-        default_index_ahp = model_list.index(st.session_state.scenario_selectbox)
-
-    def on_scenario_change():
-        st.session_state.selected_model_for_topsis = None
-        st.session_state.last_saved_model = None
-        st.session_state.last_saved_weights = None
+    # xác định index mặc định
+    _def_idx = 0
+    _after = st.session_state.pop("_after_delete_select", None)
+    if _after and _after in model_list:
+        _def_idx = model_list.index(_after)
 
     selected_scenario = st.selectbox(
         "Chọn một kịch bản có sẵn hoặc tạo mới:",
         model_list,
-        index=default_index_ahp,
+        index=_def_idx,
         key="scenario_selectbox",
-        on_change=on_scenario_change
     )
 
-    def _load_default_weights():
-        paths = [F("data/weights.yaml"), "data/weights.yaml"]
-        for path in paths:
+    def _protected_scenarios():
+        import os, yaml
+        prot = {"Office", "Default", "Baseline"}  # scenario mặc định/khóa
+        # nếu có file default riêng thì gom thêm
+        for cand in [F("defaultweights.yaml"), F("data/defaultweights.yaml"), F("default_weights.yaml")]:
             try:
-                with open(path, "r", encoding="utf-8") as f:
-                    obj = yaml.safe_load(f)
-                    if isinstance(obj, dict):
-                        return {str(k).lower(): v for k, v in obj.items() if isinstance(v, dict)}
+                if os.path.exists(cand):
+                    with open(cand, "r", encoding="utf-8") as f:
+                        d = yaml.safe_load(f) or {}
+                        if isinstance(d, dict):
+                            prot.update({str(k) for k in d.keys()})
             except Exception:
-                continue
-        return {}
+                pass
+        return prot
 
-    def save_user_weights_to_yaml(weights_dict: dict, model_name: str):
-        path = F("data/weights.yaml")
-        try:
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f) or {}
-            except FileNotFoundError:
-                data = {}
-            if not isinstance(data, dict):
-                data = {}
-            data[str(model_name)] = weights_dict
-            with open(path, "w", encoding="utf-8") as f:
-                yaml.safe_dump(data, f, allow_unicode=True, sort_keys=False)
-            return True
-        except Exception as e:
-            st.error(f"Lỗi lưu data/weights.yaml: {e}")
-            return False
+    ac1, ac2 = st.columns([2, 1])
 
-
-    def quick_customize_editor(current_weights: dict, scenario_name: str):
-        st.write("Tùy chỉnh nhanh: chỉnh sửa trọng số rồi lưu.")
-
-        # Bên trái = Tiêu chí (str), bên phải = Trọng số (float trong [0,1])
-        df_init = pd.DataFrame(
-            [(str(k), current_weights.get(k)) for k in (current_weights or {}).keys()],
-            columns=["Tiêu chí", "Trọng số"]
-        )
-
-        # Gợi ý tên theo ngữ cảnh
-        try:
-            existing_names = list(_load_defaultweights_all().keys())
-        except Exception:
-            existing_names = []
-        base_defaults = {"office", "warehouse", "factory"}
-        default_name = (
-            _next_clone_name(scenario_name, existing_names)
-            if scenario_name.strip().lower() in base_defaults
-            else (scenario_name or _next_clone_name("Custom", existing_names))
-        )
-        model_name = st.text_input("Tên kịch bản", value=str(default_name), key=f"name_{scenario_name}")
-
-        ed = st.data_editor(
-            df_init,
-            column_order=["Tiêu chí", "Trọng số"],
-            column_config={
-                "Tiêu chí": st.column_config.TextColumn("Tiêu chí"),
-                "Trọng số": st.column_config.NumberColumn(
-                    "Trọng số", min_value=0.0, max_value=1.0, step=0.01, format="%.4f"
-                ),
-            },
-            num_rows="dynamic", hide_index=True, use_container_width=True,
-            key=f"quick_edit_{scenario_name}"
-        )
-
-        # Validate: tên không rỗng, số thực trong [0,1]
-        _tmp = ed.copy()
-        _tmp["Tiêu chí"] = _tmp["Tiêu chí"].astype(str).str.strip()
-        _tmp["Trọng số"] = pd.to_numeric(_tmp["Trọng số"], errors="coerce")
-
-        if _tmp.empty:
-            invalid_quick = True
-            edited = {}
-        else:
-            valid_name = _tmp["Tiêu chí"].ne("")
-            valid_range = _tmp["Trọng số"].between(0.0, 1.0, inclusive="both")
-            invalid_quick = bool(
-                _tmp["Trọng số"].isna().any() or (~valid_name).any() or (~valid_range).any()
-            )
-            _valid = _tmp.loc[valid_name & valid_range & _tmp["Trọng số"].notna()].copy()
-            _valid["Trọng số"] = _valid["Trọng số"].astype(float)
-            edited = dict(zip(_valid["Tiêu chí"], _valid["Trọng số"]))
-
-        # Hai nút cùng hàng
-        c1, c2 = st.columns(2)
-
-        with c1:
-            disabled = bool(invalid_quick or (len(edited) == 0))
-            if st.button("Lưu bộ tuỳ chỉnh (data/weights.yaml)", use_container_width=True, disabled=disabled,
-                         key=f"btn_save_{scenario_name}"):
-                # 1) Không lưu nếu không có thay đổi so với current_weights
-                if _weights_equal(edited, current_weights or {}):
-                    st.info("Không có thay đổi so với kịch bản gốc. Bỏ qua lưu.")
-                else:
-                    # 2) Chuẩn hoá tên đích, tránh overwrite bản gốc
-                    try:
-                        exists = _load_defaultweights_all()
-                    except Exception:
-                        exists = {}
-                    names = list(exists.keys()) if isinstance(exists, dict) else []
-                    target = (model_name or "").strip() or _next_clone_name(scenario_name, names)
-
-                    # Không được ghi đè Office/Warehouse/Factory
-                    if target.strip().lower() in base_defaults:
-                        target = _next_clone_name(target, names)
-
-                    # Nếu tên đã tồn tại
-                    if target in names:
-                        # Trùng nội dung thì bỏ qua, khác nội dung thì clone sang tên mới
-                        if isinstance(exists, dict) and _weights_equal(exists.get(target, {}), edited):
-                            st.info("Nội dung trùng bản hiện có. Không lưu mới.")
-                            st.stop()
-                        target = _next_clone_name(target, names)
-
-                    ok = save_user_weights_to_yaml(edited, target)
-                    if ok:
-                        st.success(f"Đã lưu '{target}' vào data/weights.yaml")
-
-        with c2:
-            disabled = bool(invalid_quick or (len(edited) == 0))
-            if st.button("Tiếp tục qua trang phân tích", use_container_width=True, disabled=disabled,
-                         key=f"btn_next_{scenario_name}"):
-                st.session_state["selected_model_for_topsis"] = scenario_name
-                st.session_state["selected_weights_for_topsis"] = edited
+    # Nút "Tiếp tục tới phân tích"
+    with ac1:
+        disabled_next = (selected_scenario == "Tạo mô hình mới")
+        st.button(
+            "Tiếp tục tới phân tích (TOPSIS)",
+            use_container_width=True,
+            disabled=disabled_next,
+            key="btn_next_to_topsis",
+            on_click=lambda: (
+                st.session_state.setdefault("selected_model_for_topsis", selected_scenario),
+                st.session_state.setdefault("auto_run_topsis", True),
+                st.session_state.setdefault("customize_mode", False),
+                st.session_state.update(
+                    {"selected_model_for_topsis": selected_scenario, "auto_run_topsis": True, "customize_mode": False}),
                 go("Phân tích Địa điểm (TOPSIS)")
+            )
+        )
+        if disabled_next:
+            st.caption("Chọn một kịch bản trước khi tiếp tục.")
 
-        # Cảnh báo đặt dưới hàng nút
-        if invalid_quick or (len(edited) == 0):
-            st.warning("Dữ liệu thiếu hoặc không hợp lệ.")
+    # Nút "Xóa kịch bản" – chỉ cho phép xóa kịch bản do user tạo
+    with ac2:
+        prot = _protected_scenarios()
+        can_delete = (selected_scenario not in ("Tạo mô hình mới",)) and (selected_scenario not in prot)
+        if st.button("Xóa kịch bản", use_container_width=True, disabled=not can_delete, key="btn_delete_scenario"):
+            try:
+                import yaml, os
 
-    if selected_scenario not in ("--- Tạo mô hình mới ---", "Tạo mô hình mới"):
-        st.subheader(f"Trọng số hiện tại: **{selected_scenario}**")
-        defaults = _load_default_weights()
-        key_lower = str(selected_scenario).strip().lower()
-        current_weights = all_weights.get(selected_scenario, {})
-        if not current_weights and key_lower in ("office", "warehouse", "factory"):
-            current_weights = defaults.get(key_lower, {})
-
-        if current_weights:
-            st.session_state["_default_display_model"] = selected_scenario
-            st.session_state["_default_display_weights"] = current_weights
-            dfw = pd.DataFrame([(nice_name(k), v) for k, v in current_weights.items()], columns=["Tiêu chí", "Trọng số"]).sort_values("Trọng số", ascending=False).reset_index(drop=True)
-            dfw = add_index_col(dfw, "STT")
-            display_table(dfw, bold_first_col=True, fixed_height=None)
-
-            customize_toggle = st.toggle("Customize", value=False, key="default_customize_toggle")
-            if customize_toggle:
-                if "show_customization_tabs" in globals():
-                    temp_dict = {selected_scenario: current_weights}
-                    show_customization_tabs(temp_dict, model_name_placeholder=selected_scenario)
+                wf = F("data/weights.yaml")
+                data = {}
+                if os.path.exists(wf):
+                    with open(wf, "r", encoding="utf-8") as f:
+                        data = yaml.safe_load(f) or {}
+                if isinstance(data, dict) and selected_scenario in data:
+                    data.pop(selected_scenario, None)
+                    with open(wf, "w", encoding="utf-8") as f:
+                        yaml.safe_dump(data, f, allow_unicode=True, sort_keys=True)
+                    st.success(f"Đã xóa kịch bản '{selected_scenario}'.")
+                    st.session_state["_after_delete_select"] = "Tạo mô hình mới"
+                    st.rerun()
                 else:
-                    quick_customize_editor(current_weights, selected_scenario)
+                    st.warning("Không tìm thấy kịch bản để xóa.")
+            except Exception as e:
+                st.error(f"Lỗi khi xóa: {e}")
+        if not can_delete:
+            st.caption("Không thể xóa kịch bản mặc định hoặc khi chưa chọn kịch bản.")
+
+    if 'ahp_wizard' not in st.session_state:
+        st.session_state.ahp_wizard = {"step": 1, "name": "", "selected": []}
+
+    if selected_scenario == "Tạo mô hình mới":
+        w = st.session_state.ahp_wizard
+        if w["step"] == 1:
+            st.subheader("Bước 1: Chọn tiêu chí")
+            available = _union_criteria_from_weights()
+            ui_cols = st.columns([1,1,4])
+            with ui_cols[0]:
+                if st.button("Chọn tất cả"):
+                    for c in available: st.session_state[f"chk_{c}"] = True
+            with ui_cols[1]:
+                if st.button("Bỏ chọn tất cả"):
+                    for c in available: st.session_state[f"chk_{c}"] = False
+            cols = st.columns(3)
+            chosen = set(w.get("selected") or [])
+            for idx, c in enumerate(available):
+                with cols[idx%3]:
+                    chk = st.checkbox(nice_name(c), value=(c in chosen), key=f"chk_{c}")
+                    if chk: chosen.add(c)
+                    else: chosen.discard(c)
+            model_name = st.text_input("Đặt tên mô hình", value=w.get("name") or "Custom")
+            st.session_state.ahp_wizard["name"] = model_name
+            st.session_state.ahp_wizard["selected"] = sorted(list(chosen))
+            if st.button("Next", disabled=(len(chosen)<2 or not model_name.strip())):
+                st.session_state.ahp_wizard["step"] = 2; st.rerun()
+        else:
+            selected = st.session_state.ahp_wizard["selected"]
+            model_name = st.session_state.ahp_wizard["name"].strip()
+            st.subheader("Bước 2: So sánh/Chấm điểm")
+            mode_new = st.radio("Chọn phương thức nhập", ["Pairwise (AHP)", "Direct rating (1–10)"], horizontal=True, key="new_model_mode")
+            if mode_new == "Pairwise (AHP)":
+                A_input = _pairwise_matrix_editor(selected, session_key="pw_new_editor")
+                M_norm = _normalize_columns(A_input)
+                if st.button("Tính AHP và Lưu"):
+                    weights_vec, cr = calculate_ahp_weights(M_norm)
+                    if weights_vec is not None:
+                        s = float(sum(weights_vec)) or 1.0
+                        weights_norm = {k: float(v)/s for k, v in zip(selected, weights_vec)}
+                        ok, saved_name = save_weights_to_yaml(weights_norm, model_name, filename=F("data/weights.yaml"))
+                        if ok:
+                            _notify_saved(True)
+                        else:
+                            st.error("Lưu thất bại.")
+                    else:
+                        st.error("Không tính được trọng số.")
             else:
-                if st.button("Tiếp tục qua trang phân tích", use_container_width=True):
-                    st.session_state["selected_model_for_topsis"] = selected_scenario
-                    st.session_state["selected_weights_for_topsis"] = current_weights
-                    go("Phân tích Địa điểm (TOPSIS)")
-        else:
-            st.warning("Mô hình này chưa có trọng số.")
-            st.info("Bật Customize để tự tạo trọng số cho kịch bản này.")
-            if st.toggle("Customize", value=True, key="default_customize_toggle_empty"):
-                if "show_customization_tabs" in globals():
-                    show_customization_tabs({}, model_name_placeholder=selected_scenario)
-                else:
-                    quick_customize_editor({}, selected_scenario)
+                st.caption("Direct rating 1–10. Hệ thống chuẩn hoá về tổng = 1.")
+                scores = _direct_rating_2col(selected, {}, "new_block")
+                s = sum(scores.values()) or 1
+                weights_norm = {k: float(v)/s for k, v in scores.items()}
+                dfw = pd.DataFrame([(nice_name(k), scores[k], weights_norm[k]) for k in selected],
+                                   columns=["Tiêu chí","Điểm 1–10","Trọng số (chuẩn hoá)"])
+                st.dataframe(dfw, hide_index=True, use_container_width=True)
+                if st.button("Lưu mô hình (Direct rating)"):
+                    ok, saved_name = save_weights_to_yaml(weights_norm, model_name, filename=F("data/weights.yaml"))
+                    _notify_saved(ok)
+            if st.button("Quay lại bước 1"):
+                st.session_state.ahp_wizard["step"] = 1; st.rerun()
     else:
-        st.info("Tạo mô hình mới.")
-        if "show_customization_tabs" in globals():
-            show_customization_tabs(all_weights)
-        else:
-            quick_customize_editor({}, "NewModel")
+        st.subheader(f"Trọng số hiện tại: **{selected_scenario}**")
+        current_weights = all_weights.get(selected_scenario, {})
+        if current_weights:
+            dfw = pd.DataFrame([(nice_name(k), v) for k, v in current_weights.items()],
+                               columns=["Tiêu chí","Trọng số"]).sort_values("Trọng số", ascending=False).reset_index(drop=True) 
+            st.dataframe(dfw, hide_index=True, use_container_width=True)
+            st.markdown("---"); st.markdown("#### Customize")
+            _cust_visible_key = f"cust_visible_{selected_scenario}"
+            cust_visible = st.toggle("Bật Customize", value=False, key=_cust_visible_key)
+            if not cust_visible:
+                st.caption("Customize đang tắt.")
+                st.stop()
+            _ui_delete_features(selected_scenario, current_weights)
+            mode = st.radio("Phương thức chỉnh", ["Pairwise (AHP)", "Direct rating (1–10)"], horizontal=True, key=f"cust_mode_{selected_scenario}")
+            features = list(current_weights.keys())
+            if mode == "Pairwise (AHP)":
+                A_input = _pairwise_matrix_editor(features, session_key=f"pw_edit_{selected_scenario}")
+                M_norm = _normalize_columns(A_input)
+                weights_vec, cr = calculate_ahp_weights(M_norm)
+                if weights_vec is not None:
+                    s = float(sum(weights_vec)) or 1.0
+                    weights_norm = {k: float(v)/s for k, v in zip(features, weights_vec)}
+                    dfp = pd.DataFrame([(nice_name(k), weights_norm[k]) for k in features],
+                                       columns=["Tiêu chí","Trọng số"]).sort_values("Trọng số", ascending=False).reset_index(drop=True)
+                    st.dataframe(dfp, hide_index=True, use_container_width=True)
+                if st.button("Lưu thay đổi", key=f"save_pw_{selected_scenario}"):
+                    ok, saved_name = save_weights_to_yaml(weights_norm, selected_scenario, filename=F("data/weights.yaml"))
+                    _notify_saved(ok)
+            else:
+                init = {f: max(1, min(10, int(round(float(current_weights.get(f,0))*10)))) for f in features}
+                scores = _direct_rating_2col(features, init, f"cust_block_{selected_scenario}")
+                s = sum(scores.values()) or 1
+                new_w = {f: float(v)/s for f, v in scores.items()}
+                dfp = pd.DataFrame([(nice_name(k), scores[k], new_w[k]) for k in features],
+                                   columns=["Tiêu chí","Điểm 1–10","Trọng số (chuẩn hoá)"])
+                st.dataframe(dfp, hide_index=True, use_container_width=True)
+                if st.button("Lưu thay đổi", key=f"save_num_{selected_scenario}"):
+                    ok, saved_name = save_weights_to_yaml(new_w, selected_scenario, filename=F("data/weights.yaml"))
+                    _notify_saved(ok)
 
-# =============== PAGE 4: TOPSIS ===============
 elif page == "Phân tích Địa điểm (TOPSIS)":
     st.header("Trang 4: Xếp hạng Địa điểm TOPSIS")
 
@@ -815,27 +1005,69 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
     )
 
     def run_and_display_topsis(model_name):
+
         st.session_state['last_topsis_model'] = model_name
+        # === Weights summary (table + pie) ===
+        weights_dict = all_weights.get(model_name, {}) or {}
+        if isinstance(weights_dict, dict) and weights_dict:
+            wdf = pd.DataFrame(
+                [(nice_name(k), round(float(v)*10, 2), round(float(v)*100, 2)) for k, v in weights_dict.items()],
+                columns=["Tiêu chí", "Điểm (1–10)", "Trọng số (%)"]
+            ).sort_values("Trọng số (%)", ascending=False).reset_index(drop=True)
+            c1, c2 = st.columns([1,1])
+            with c1:
+                st.subheader("Bảng tiêu chí")
+                display_table(wdf, bold_first_col=True, fixed_height=280)
+            with c2:
+                st.subheader("Phân bổ trọng số")
+                try:
+                    # wdf: DataFrame có cột "Tiêu chí" và "Trọng số (%)"
+                    wdf = wdf.sort_values("Trọng số (%)", ascending=False).reset_index(drop=True)
+                    wdf["_label"] = wdf["Trọng số (%)"].round().astype(int).astype(str) + "%"
+
+                    LABEL_MIN = 0
+
+                    base = alt.Chart(wdf).encode(
+                        theta=alt.Theta("Trọng số (%)", stack=True),
+                        color=alt.Color("Tiêu chí", sort=wdf["Tiêu chí"].tolist()),
+                        order=alt.Order("Trọng số (%)", sort="descending")
+                    )
+
+                    pie = base.mark_arc(outerRadius=120, innerRadius=55)
+
+                    text = (
+                        base.transform_filter(alt.datum["Trọng số (%)"] >= LABEL_MIN)
+                        .mark_text(radius=148)  # nhãn nằm ngoài
+                        .encode(text=alt.Text("_label:N"))
+                    )
+
+                    st.altair_chart(pie + text, use_container_width=True)
+                except Exception:
+                    pass
+            st.divider()
+        # === Run TOPSIS ===
         report_df = run_topsis_model(
-            data_path="AHP_Data_synced_fixed.xlsx",
-            json_path="metadata.json",
+            data_path=F("AHP_Data_synced_fixed.xlsx"),
+            json_path=F("metadata.json"),
             analysis_type=model_name,
             all_criteria_weights=all_weights
         )
         if report_df is not None:
             st.session_state['last_topsis_df'] = report_df.copy()
-            st.subheader("Kết quả xếp hạng")
+            st.subheader("Xếp hạng đầy đủ")
             show = report_df.copy()
             show = add_index_col(show, "STT")
-            display_table(show, bold_first_col=True, fixed_height=420)
-
+            display_table(show, bold_first_col=True, fixed_height=380)
             st.divider()
-            cols = st.columns(3)
+            cols = st.columns(4)
             with cols[0]:
-                st.button("Map View", on_click=switch_to_map_view, use_container_width=True)
+                if st.button("Rerun DSS", use_container_width=True):
+                    st.rerun()
             with cols[1]:
-                st.button("Sensitivity", on_click=switch_to_sensitivity, use_container_width=True)
+                st.button("Map View", on_click=switch_to_map_view, use_container_width=True)
             with cols[2]:
+                st.button("Sensitivity", on_click=switch_to_sensitivity, use_container_width=True)
+            with cols[3]:
                 st.button("Customize AHP", on_click=switch_to_ahp_customize, use_container_width=True)
         else:
             st.error("Lỗi khi phân tích TOPSIS.")
@@ -920,7 +1152,7 @@ elif page == "Phân tích Độ nhạy (What-if)":
             st.warning("Tất cả trọng số đều bằng 0.")
 
         if st.button("Chạy What-if"):
-            original_df, new_df = run_what_if_analysis(selected_model, normalized_weights)
+            original_df, new_df = run_what_if_analysis(selected_model, normalized_weights, all_weights)
             if original_df is not None and new_df is not None:
                 col1, col2 = st.columns(2)
                 with col1:
@@ -933,27 +1165,9 @@ elif page == "Phân tích Độ nhạy (What-if)":
                 st.divider()
                 st.subheader("So sánh phân bổ trọng số")
 
-                def create_pie_data(weights_dict, title_suffix):
-                    if not weights_dict:
-                        return pd.DataFrame(columns=["Tiêu chí", "Trọng số", "Loại", "Tỷ lệ"])
-                    dfw = pd.DataFrame(list(weights_dict.items()), columns=["Tiêu chí", "Trọng số"])
-                    dfw["Loại"] = title_suffix
-                    s = dfw["Trọng số"].sum()
-                    dfw["Tỷ lệ"] = dfw["Trọng số"] / (s if s > 0 else 1)
-                    dfw["Tiêu chí"] = dfw["Tiêu chí"].map(nice_name)
-                    return dfw
-
-                df_pie_original = create_pie_data(original_weights, "1. Gốc")
-                df_pie_new = create_pie_data(normalized_weights, "2. Mới")
-                df_combined = pd.concat([df_pie_original, df_pie_new], ignore_index=True)
-
-                if not df_combined.empty:
-                    base = alt.Chart(df_combined).encode(theta=alt.Theta("Trọng số", stack=True))
-                    pie = base.mark_arc(outerRadius=120).encode(color=alt.Color("Tiêu chí"), tooltip=["Loại", "Tiêu chí", alt.Tooltip("Trọng số", format=".1%")])
-                    t_in = base.mark_text(radius=80).encode(text=alt.Text("Tỷ lệ", format=".1%")).transform_filter(alt.datum["Tỷ lệ"] > 0.05)
-                    t_out = base.mark_text(radius=140).encode(text=alt.Text("Tỷ lệ", format=".1%")).transform_filter(alt.datum["Tỷ lệ"] <= 0.05)
-                    chart = (pie + t_in + t_out).facet(column=alt.Column("Loại", title="Phân bổ"))
-                    st.altair_chart(chart, use_container_width=True)
+                chart = pie_compare_weight(original_weights, normalized_weights,
+                                           title_left="1. Gốc", title_right="2. Mới")
+                st.altair_chart(chart, use_container_width=True)
 
                 st.subheader("Bảng thay đổi thứ hạng")
                 df_orig_simple = original_df[['Tên phường', 'Rank']].rename(columns={'Rank': 'Hạng Gốc'})
@@ -983,101 +1197,89 @@ elif page == "Map View":
     if not model_to_map:
         st.warning("Cần chạy TOPSIS trước để chọn mô hình.")
         st.stop()
-
     st.success(f"Kết quả cho mô hình: **{model_to_map}**")
+
+    hue_label = st.radio("Màu heatmap", ["Xanh lá", "Đỏ"], horizontal=True, key="map_hue")
+    hue = "green" if hue_label == "Xanh lá" else "red"
 
     geojson_file = "quan7_geojson.json"
     ranking_file = f"ranking_result_{model_to_map}.xlsx"
 
-    try:
-        with open(geojson_file, 'r', encoding='utf-8') as f:
-            geojson_data = json.load(f)
-    except FileNotFoundError:
-        st.error(f"Thiếu `{geojson_file}`.")
-        st.stop()
-    except Exception as e:
-        st.error(f"Lỗi đọc GeoJSON: {e}")
-        st.stop()
+    with open(F(geojson_file), 'r', encoding='utf-8') as f:
+        geojson_data = json.load(f)
+    df_ranking = pd.read_excel(F(ranking_file))
 
-    try:
-        df_ranking = pd.read_excel(ranking_file)
-    except FileNotFoundError:
-        st.error(f"Thiếu `{ranking_file}`. Hãy chạy TOPSIS cho mô hình này trước.")
-        st.stop()
-    except Exception as e:
-        st.error(f"Lỗi đọc file xếp hạng: {e}")
-        st.stop()
+    ranking_lookup = {
+        str(row['Tên phường']).replace(" ", ""): row.to_dict()
+        for _, row in df_ranking.iterrows()
+    }
 
-    ranking_lookup = {}
-    for _, row in df_ranking.iterrows():
-        normalized_key = str(row['Tên phường']).replace(" ", "")
-        ranking_lookup[normalized_key] = row.to_dict()
+    def mono_palette(h):
+        if h == "red":
+            return [
+                [255,235,230,220],[255,210,195,220],[255,184,160,220],
+                [248,150,120,220],[232,112,84,220],[206,72,58,220],[170,40,40,220],
+            ]
+        return [
+            [230,248,235,220],[201,236,214,220],[166,222,189,220],
+            [120,206,160,220],[72,188,128,220],[34,163,98,220],[16,128,74,220],
+        ]
+    PAL = mono_palette(hue); BINS = len(PAL)
 
-    max_rank = df_ranking['Rank'].max()
-    missing_wards = []
+    def color_from_score_discrete(score: float):
+        t = 0.0 if score is None else max(0.0, min(1.0, float(score)))
+        idx = min(BINS - 1, int(round(t * (BINS - 1))))
+        return PAL[idx]
 
-    def color_from_ratio(ratio: float):
-        if ratio <= 0.5:
-            t = ratio / 0.5
-            r = int(0 + t * (255 - 0))
-            g = int(170 + t * (204 - 170))
-            b = int(85 - t * (85 - 0))
+    # Top 1–3 dùng 3 mức đậm nhất cùng tông, viền vẫn mỏng như các ô khác
+    def color_for_rank(rank, score):
+        try: rnk = int(rank)
+        except: rnk = 0
+        if rnk == 1: return PAL[-1]
+        if rnk == 2: return PAL[-2]
+        if rnk == 3: return PAL[-3]
+        return color_from_score_discrete(score)
+
+    # Gắn thuộc tính
+    for feature in geojson_data.get('features', []):
+        name_raw = feature.get('properties', {}).get('name')
+        if not name_raw: continue
+        key = str(name_raw).replace(" ", "")
+        info = ranking_lookup.get(key)
+
+        if info is not None:
+            rank = int(info.get('Rank'))
+            try: score = float(info.get('Điểm TOPSIS (0-1)'))
+            except: score = 0.0
+            feature['properties']['Rank'] = rank
+            feature['properties']['Score'] = score
+            feature['properties']['color'] = color_for_rank(rank, score)
         else:
-            t = (ratio - 0.5) / 0.5
-            r = int(255 - t * (255 - 204))
-            g = int(204 - t * 204)
-            b = 0
-        return [r, g, b, 200]
-
-    for feature in geojson_data['features']:
-        ward_name_from_map_original = feature['properties'].get('name')
-        if ward_name_from_map_original:
-            ward_name_from_map_normalized = str(ward_name_from_map_original).replace(" ", "")
-            if ward_name_from_map_normalized in ranking_lookup:
-                rank_data = ranking_lookup[ward_name_from_map_normalized]
-                rank = int(rank_data['Rank'])
-                score = float(rank_data['Điểm TOPSIS (0-1)'])
-                feature['properties']['Rank'] = rank
-                feature['properties']['Score'] = score
-                ratio = (rank - 1) / (max_rank - 1) if max_rank > 1 else 0
-                feature['properties']['color'] = color_from_ratio(ratio)
-            else:
-                missing_wards.append(ward_name_from_map_original)
-                feature['properties']['Rank'] = "N/A"
-                feature['properties']['Score'] = "N/A"
-                feature['properties']['color'] = [128, 128, 128, 120]
-        else:
-            missing_wards.append("(Tên rỗng)")
-
-    if missing_wards:
-        st.warning("Tên phường không khớp: " + ", ".join(missing_wards))
+            feature['properties']['Rank'] = "N/A"
+            feature['properties']['Score'] = None
+            feature['properties']['color'] = PAL[0]
 
     st.subheader("Bản đồ Xếp hạng TOPSIS")
-    st.caption("Xanh tốt hơn. Viền đen.")
+    st.caption("Một tông màu. Top 1–3 đậm hơn, mọi viền đều mỏng.")
 
-    view_state = pdk.ViewState(
-        latitude=10.73, longitude=106.72, zoom=13, pitch=0, bearing=0
-    )
+    view_state = pdk.ViewState(latitude=10.73, longitude=106.72, zoom=13, pitch=0, bearing=0)
     layer = pdk.Layer(
-        'GeoJsonLayer',
+        "GeoJsonLayer",
         geojson_data,
-        opacity=0.85,
+        opacity=0.9,
         stroked=True,
         filled=True,
         extruded=False,
-        get_fill_color='properties.color',
-        get_line_color=[0, 0, 0],
-        get_line_width=300,
+        get_fill_color="properties.color",
+        get_line_color=[25, 25, 25, 160],
+        get_line_width=60,          # viền mỏng cho tất cả
         pickable=True,
-        auto_highlight=True
+        auto_highlight=True,
     )
     tooltip = {
-        "html": """
-            <b>Phường:</b> {name}<br/> 
-            <b>Hạng:</b> {Rank}<br/>
-            <b>Điểm TOPSIS:</b> {Score}
-        """,
-        "style": {"backgroundColor": "steelblue", "color": "white"}
+        "html": "<b>Phường:</b> {name}<br/><b>Hạng:</b> {Rank}<br/><b>Điểm TOPSIS:</b> {Score}",
+        "style": {"backgroundColor": "steelblue", "color": "white"},
     }
-    r = pdk.Deck(layers=[layer], initial_view_state=view_state, map_style=pdk.map_styles.LIGHT, tooltip=tooltip)
-    st.pydeck_chart(r, use_container_width=True)
+    deck = pdk.Deck(layers=[layer], initial_view_state=view_state,
+                    map_style=pdk.map_styles.LIGHT, tooltip=tooltip)
+    st.pydeck_chart(deck, use_container_width=True)
