@@ -294,23 +294,24 @@ def _generate_bar_charts(raw_data_df: pd.DataFrame, output_prefix: str) -> Dict[
         print(f"Lỗi vẽ bar: {e}")
         return {}
 
-def _generate_ranking_map(ranking_df: pd.DataFrame, geojson_path: str, output_path: str) -> Optional[str]:
+def _generate_ranking_map(ranking_df: pd.DataFrame, geojson_path: str, output_path: str, hue: str = "blue") -> Optional[str]:
     try:
         gdf = geopandas.read_file(geojson_path)
         gdf["join_key"] = gdf["name"].astype(str).str.replace(" ", "")
-
         tmp = ranking_df.copy()
         tmp["join_key"] = tmp["Tên phường"].astype(str).str.replace(" ", "")
         merged = gdf.merge(tmp, on="join_key", how="left")
-
         merged["Điểm TOPSIS (0-1)"] = merged["Điểm TOPSIS (0-1)"].fillna(0.0)
+
+        # NEW: đồng bộ colormap theo hue
+        cmap = {"red": "Reds", "green": "Greens", "blue": "Blues"}.get(str(hue).lower(), "Blues")
 
         fig, ax = plt.subplots(1, 1, figsize=(10, 10))
         merged.plot(
             column="Điểm TOPSIS (0-1)",
             ax=ax,
             legend=True,
-            cmap="Blues",
+            cmap=cmap,
             vmin=0.0,
             vmax=1.0,
             missing_kwds={"color": "lightgrey", "label": "Không có dữ liệu"},
@@ -331,7 +332,7 @@ def _generate_ranking_map(ranking_df: pd.DataFrame, geojson_path: str, output_pa
 # =========================
 # Main API
 # =========================
-def create_full_report(model_name: str, all_weights: Dict) -> Optional[str]:
+def create_full_report(model_name: str, all_weights: Dict, hue: str = "blue") -> Optional[str]:
     """
     Tạo báo cáo PDF gồm:
       - Pie trọng số AHP
@@ -354,8 +355,8 @@ def create_full_report(model_name: str, all_weights: Dict) -> Optional[str]:
 
     pie_path = _generate_weights_pie_chart(weights_dict, _tmp("weights_pie"))
     radar_path = _generate_radar_chart(ranking_df, raw_data_df, metadata, _tmp("radar_top3"))
-    map_path = _generate_ranking_map(ranking_df, GEOJSON_PATH, _tmp("ranking_map"))
-    bar_paths = _generate_bar_charts(raw_data_df, os.path.join(TEMP_ASSET_DIR, f"{safe}_bar"))
+    map_path   = _generate_ranking_map(ranking_df, GEOJSON_PATH, _tmp("ranking_map"), hue=hue)
+    bar_paths  = _generate_bar_charts(raw_data_df, os.path.join(TEMP_ASSET_DIR, f"{safe}_bar"))
 
     pdf = PDF("P", "mm", "A4")
     pdf.set_model_name(model_name)

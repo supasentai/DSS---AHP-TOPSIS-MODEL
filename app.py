@@ -38,6 +38,7 @@ try:
     from ahp_module import calculate_ahp_weights, save_weights_to_yaml
     from topsis_module import run_topsis_model
     from sensitivity_module import run_what_if_analysis
+    from report_module import create_full_report
 except ImportError as e:
     st.error(
         f"Lỗi import module: {e}. Kiểm tra các file ahp_module.py, topsis_module.py, sensitivity_module.py."
@@ -177,6 +178,7 @@ def display_table(df, bold_first_col=True, fixed_height=420, header_tooltips=Non
         html_tbl = _inject_tooltips_on_th(html_tbl, header_tooltips)
     h = "" if fixed_height is None else f"max-height:{int(fixed_height)}px;overflow:auto;"
     st.markdown(f'<div class="fixed-height" style="{h}">{html_tbl}</div>', unsafe_allow_html=True)
+
 
 @st.cache_data
 def _load_all_weights_for_options():
@@ -369,12 +371,20 @@ def switch_to_topsis_page_and_run():
     go("Phân tích Địa điểm (TOPSIS)")
 
 def switch_to_map_view():
-    st.session_state.model_for_next_page = st.session_state.topsis_model_selector
+    # ưu tiên model đang chọn ở TOPSIS selectbox
+    m = st.session_state.get("scenario_selectbox") \
+        or st.session_state.get("topsis_model_selector") \
+        or st.session_state.get("last_topsis_model")
+    if m:
+        st.session_state.model_for_next_page = m
     go("Map View")
 
 def switch_to_sensitivity():
-    st.session_state.whatif_model_selector = st.session_state.topsis_model_selector
-    go("Phân tích Độ nhạy (What-if)")
+    last = st.session_state.get('last_topsis_model')
+    if last:
+        st.session_state["model_for_whatif"] = last
+    st.session_state["page"] = "Phân tích độ nhạy (What-if)"
+    st.rerun()
 
 def switch_to_ahp_customize():
     if st.session_state.page_navigator == "Phân tích Địa điểm (TOPSIS)":
@@ -384,6 +394,12 @@ def switch_to_ahp_customize():
     st.session_state.customize_mode = True
     go("Tùy chỉnh Trọng số (AHP)")
 
+def _run_topsis_from(model_name: str):
+    # handoff + autorun
+    st.session_state["model_for_next_page"] = model_name
+    st.session_state["topsis_autorun"] = True
+    # điều hướng qua radio sidebar
+    go("Phân tích Địa điểm (TOPSIS)")
 
 # =========================
 # Sidebar nav
@@ -749,15 +765,30 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
             if mode_new == "Pairwise (AHP)":
                 A_input = _pairwise_matrix_editor(selected, session_key="pw_new_editor")
                 M_norm = _normalize_columns(A_input)
-                if st.button("Tính AHP và Lưu"):
-                    weights_vec, _ = calculate_ahp_weights(M_norm)
-                    if weights_vec is not None:
-                        s = float(sum(weights_vec)) or 1.0
-                        weights_norm = {k: float(v)/s for k, v in zip(selected, weights_vec)}
-                        ok, _ = save_weights_to_yaml(weights_norm, model_name, filename=F("data/weights.yaml"))
-                        _notify_saved(ok)
-                    else:
-                        st.error("Không tính được trọng số.")
+
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("Tính AHP và Lưu"):
+                        weights_vec, _ = calculate_ahp_weights(M_norm)
+                        if weights_vec is not None:
+                            s = float(sum(weights_vec)) or 1.0
+                            weights_norm = {k: float(v) / s for k, v in zip(selected, weights_vec)}
+                            ok, _ = save_weights_to_yaml(weights_norm, model_name, filename=F("data/weights.yaml"))
+                            _notify_saved(ok)
+                        else:
+                            st.error("Không tính được trọng số.")
+                with c2:
+                    if st.button("Tính + Lưu + Chạy TOPSIS"):
+                        weights_vec, _ = calculate_ahp_weights(M_norm)
+                        if weights_vec is not None:
+                            s = float(sum(weights_vec)) or 1.0
+                            weights_norm = {k: float(v) / s for k, v in zip(selected, weights_vec)}
+                            ok, _ = save_weights_to_yaml(weights_norm, model_name, filename=F("data/weights.yaml"))
+                            _notify_saved(ok)
+                            if ok:
+                                _run_topsis_from(model_name)
+                        else:
+                            st.error("Không tính được trọng số.")
             else:
                 st.caption("Direct rating 1–10. Hệ thống chuẩn hoá về tổng = 1.")
                 scores = _direct_rating_2col(selected, {}, "new_block")
@@ -766,9 +797,11 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
                 dfw = pd.DataFrame([(nice_name(k), scores[k], weights_norm[k]) for k in selected],
                                    columns=["Tiêu chí","Điểm 1–10","Trọng số (chuẩn hoá)"])
                 st.dataframe(dfw, hide_index=True, use_container_width=True)
-                if st.button("Lưu mô hình (Direct rating)"):
+                if st.button("Lưu + Chạy TOPSIS (Direct rating)"):
                     ok, _ = save_weights_to_yaml(weights_norm, model_name, filename=F("data/weights.yaml"))
                     _notify_saved(ok)
+                    if ok:
+                        _run_topsis_from(model_name)
 
             if st.button("Quay lại bước 1"):
                 st.session_state.ahp_wizard["step"] = 1; st.rerun()
@@ -806,6 +839,9 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
                 if st.button("Lưu thay đổi", key=f"save_pw_{selected_scenario}"):
                     ok, _ = save_weights_to_yaml(weights_norm, selected_scenario, filename=F("data/weights.yaml"))
                     _notify_saved(ok)
+
+                if st.button("Chạy TOPSIS với mô hình hiện tại", key=f"run_topsis_{selected_scenario}"):
+                    _run_topsis_from(selected_scenario)
             else:
                 init = {f: max(1, min(10, int(round(float(current_weights.get(f,0))*10)))) for f in features}
                 scores = _direct_rating_2col(features, init, f"cust_block_{selected_scenario}")
@@ -834,23 +870,29 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
     except FileNotFoundError:
         st.error("Thiếu data/weights.yaml."); st.stop()
 
-    selectbox_key_topsis = "topsis_model_selector"
-    default_index_topsis = 0
-    model_transferred = None
+    # 1) Key selectbox phải có trước khi đọc state
+    selectbox_key_topsis = "scenario_selectbox"
 
-    if st.session_state.get('selected_model_for_topsis') is not None:
-        model_transferred = st.session_state.selected_model_for_topsis
-        if model_transferred in model_names:
-            default_index_topsis = model_names.index(model_transferred)
-        st.success(f"Tự động chọn mô hình '{model_names[default_index_topsis]}'")
-    elif selectbox_key_topsis in st.session_state:
-        cur = st.session_state[selectbox_key_topsis]
-        if cur in model_names:
-            default_index_topsis = model_names.index(cur)
+    # 2) Handoff và lựa chọn trước đó
+    _preselect = st.session_state.pop("model_for_next_page", None)
+    _prev_name = st.session_state.get(selectbox_key_topsis)
 
-    selected_model = st.selectbox("Chọn mô hình:", model_names, index=default_index_topsis, key=selectbox_key_topsis)
+    if _preselect in model_names:
+        idx = model_names.index(_preselect)
+        st.success(f"Tự động chọn mô hình '{_preselect}'")
+    elif _prev_name in model_names:
+        idx = model_names.index(_prev_name)
+    else:
+        idx = 0
 
-    def run_and_display_topsis(model_name):
+    selected_model = st.selectbox(
+        "Chọn mô hình",
+        model_names,
+        index=idx,
+        key=selectbox_key_topsis
+    )
+
+    def run_and_display_topsis(model_name: str):
         st.session_state['last_topsis_model'] = model_name
 
         weights_dict = all_weights.get(model_name, {}) or {}
@@ -869,7 +911,6 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
                 try:
                     wdf = wdf.sort_values("Trọng số (%)", ascending=False).reset_index(drop=True)
                     wdf["_label"] = wdf["Trọng số (%)"].round().astype(int).astype(str) + "%"
-
                     base = alt.Chart(wdf).encode(
                         theta=alt.Theta("Trọng số (%)", stack=True),
                         color=alt.Color("Tiêu chí", sort=wdf["Tiêu chí"].tolist()),
@@ -901,19 +942,12 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
         else:
             st.error("Lỗi khi phân tích TOPSIS.")
 
-    if st.session_state.get('auto_run_topsis', False):
-        st.session_state.auto_run_topsis = False
-        if model_transferred in model_names:
-            run_and_display_topsis(model_transferred)
-            st.session_state.selected_model_for_topsis = None
-        else:
-            st.error("Không tìm thấy mô hình được chuyển.")
-            if st.button(f"Chạy '{selected_model.upper()}'"):
-                run_and_display_topsis(selected_model)
+    # 3) Autorun hợp nhất, không dùng các cờ khác
+    if st.session_state.pop("topsis_autorun", False):
+        run_and_display_topsis(selected_model)
     else:
         if st.button(f"Chạy '{selected_model.upper()}'"):
             run_and_display_topsis(selected_model)
-
 
 # =========================
 # Page: What-if
@@ -921,6 +955,7 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
 elif page == "Phân tích Độ nhạy (What-if)":
     st.header("Trang 5: Phân tích Độ nhạy (What-if)")
 
+    # 1) Tải mô hình AHP
     try:
         with open(F("data/weights.yaml"), 'r', encoding='utf-8') as f:
             all_weights = yaml.safe_load(f) or {}
@@ -930,15 +965,35 @@ elif page == "Phân tích Độ nhạy (What-if)":
     except FileNotFoundError:
         st.error("Thiếu data/weights.yaml."); st.stop()
 
+    # 2) Chọn mô hình: dùng 1 selectbox duy nhất, hỗ trợ handoff
     selectbox_key_whatif = "whatif_model_selector"
-    default_index_whatif = 0
-    if st.session_state.get('whatif_model_selector') in model_names:
-        default_index_whatif = model_names.index(st.session_state.whatif_model_selector)
 
-    selected_model = st.selectbox("Chọn mô hình gốc:", model_names, index=default_index_whatif, key=selectbox_key_whatif)
+    # Handoff ưu tiên: từ TOPSIS → What-if
+    _handoff = st.session_state.pop("model_for_whatif", None)
+    # Fallback cho code cũ nếu còn dùng khóa này
+    if _handoff is None:
+        _handoff = st.session_state.pop("model_for_next_page", None)
 
+    _prev = st.session_state.get(selectbox_key_whatif, None)
+
+    if _handoff in model_names:
+        idx = model_names.index(_handoff)
+        st.success(f"Tự động chọn mô hình '{_handoff}'")
+    elif _prev in model_names:
+        idx = model_names.index(_prev)
+    else:
+        idx = 0
+
+    selected_model = st.selectbox(
+        "Chọn mô hình gốc:",
+        model_names,
+        index=idx,
+        key=selectbox_key_whatif
+    )
+
+    # 3) Giao diện điều chỉnh trọng số
     if selected_model:
-        original_weights = all_weights[selected_model]
+        original_weights = all_weights.get(selected_model, {})
         st.subheader(f"Điều chỉnh Trọng số — {selected_model.upper()}")
 
         new_weights = {}
@@ -953,18 +1008,22 @@ elif page == "Phân tích Độ nhạy (What-if)":
 
         for c in model_criteria:
             new_weights[c] = st.slider(
-                nice_name(c), 0.0, 1.0, original_weights.get(c, 0.0), 0.01, key=f"slider_{c}_{selected_model}"
+                nice_name(c), 0.0, 1.0, float(original_weights.get(c, 0.0)), 0.01, key=f"slider_{c}_{selected_model}"
             )
 
         if other_criteria:
             st.markdown("**Tiêu chí không sử dụng (trọng số = 0)**")
-            df_unused = add_index_col(pd.DataFrame({"Tiêu chí không sử dụng": [nice_name(c) for c in other_criteria]}), "STT")
+            df_unused = add_index_col(
+                pd.DataFrame({"Tiêu chí không sử dụng": [nice_name(c) for c in other_criteria]}),
+                "STT"
+            )
             display_table(df_unused, bold_first_col=True, fixed_height=240)
 
-        s = sum(new_weights.values())
+        s = float(sum(new_weights.values()))
         normalized_weights = {k: (v / s if s > 0 else 0.0) for k, v in new_weights.items()}
         st.caption(f"Tổng trọng số mới = {s:.2f}. Đã chuẩn hóa." if s > 0 else "Tất cả trọng số đang bằng 0.")
 
+        # 4) Chạy What-if
         if st.button("Chạy What-if"):
             original_df, new_df = run_what_if_analysis(selected_model, normalized_weights, all_weights)
             if original_df is not None and new_df is not None:
@@ -979,7 +1038,10 @@ elif page == "Phân tích Độ nhạy (What-if)":
                 st.divider()
                 st.subheader("So sánh phân bổ trọng số")
                 st.altair_chart(
-                    pie_compare_weight(original_weights, normalized_weights, title_left="1. Gốc", title_right="2. Mới"),
+                    pie_compare_weight(
+                        original_weights, normalized_weights,
+                        title_left="1. Gốc", title_right="2. Mới"
+                    ),
                     use_container_width=True,
                 )
 
@@ -988,7 +1050,9 @@ elif page == "Phân tích Độ nhạy (What-if)":
                 df_new_simple = new_df[['Tên phường', 'Rank']].rename(columns={'Rank': 'Hạng Mới'})
                 df_rank_change = pd.merge(df_orig_simple, df_new_simple, on='Tên phường')
                 df_rank_change['Thay đổi (số)'] = df_rank_change['Hạng Gốc'] - df_rank_change['Hạng Mới']
-                df_rank_change['Thay đổi'] = df_rank_change['Thay đổi (số)'].apply(lambda d: f"▲ +{d}" if d > 0 else ("▼ {d}" if d < 0 else "—"))
+                # f-string đúng cho cả số âm
+                df_rank_change['Thay đổi'] = df_rank_change['Thay đổi (số)'] \
+                    .apply(lambda d: f"▲ +{d}" if d > 0 else (f"▼ {d}" if d < 0 else "—"))
                 df_rank_change = df_rank_change.sort_values(by='Hạng Mới')
                 st.session_state['last_whatif_rank_changes'] = df_rank_change.copy()
                 display_table(df_rank_change[['Tên phường', 'Hạng Mới', 'Hạng Gốc', 'Thay đổi']], True, 420)
@@ -1007,7 +1071,9 @@ elif page == "Map View":
         st.warning("Cần chạy TOPSIS trước để chọn mô hình."); st.stop()
     st.success(f"Kết quả cho mô hình: **{model_to_map}**")
 
-    hue = "green" if st.radio("Màu heatmap", ["Xanh lá", "Đỏ"], horizontal=True, key="map_hue") == "Xanh lá" else "red"
+    # NEW: thêm 'Xanh dương'
+    hue_label = st.radio("Màu heatmap", ["Xanh lá", "Đỏ", "Xanh dương"], horizontal=True, key="map_hue")
+    hue = {"Xanh lá": "green", "Đỏ": "red", "Xanh dương": "blue"}[hue_label]
 
     geojson_file = "quan7_geojson.json"
     ranking_file = f"ranking_result_{model_to_map}.xlsx"
@@ -1018,10 +1084,14 @@ elif page == "Map View":
 
     ranking_lookup = {str(r['Tên phường']).replace(" ", ""): r.to_dict() for _, r in df_ranking.iterrows()}
 
+    # --- mở rộng palette rời rạc cho pydeck ---
     def mono_palette(h):
         if h == "red":
             return [[255,235,230,220],[255,210,195,220],[255,184,160,220],[248,150,120,220],[232,112,84,220],[206,72,58,220],[170,40,40,220]]
-        return [[230,248,235,220],[201,236,214,220],[166,222,189,220],[120,206,160,220],[72,188,128,220],[34,163,98,220],[16,128,74,220]]
+        if h == "green":
+            return [[230,248,235,220],[201,236,214,220],[166,222,189,220],[120,206,160,220],[72,188,128,220],[34,163,98,220],[16,128,74,220]]
+        # NEW: blue
+        return [[235,244,255,220],[206,229,255,220],[174,214,255,220],[140,197,255,220],[104,178,255,220],[68,153,235,220],[36,120,200,220]]
     PAL = mono_palette(hue); BINS = len(PAL)
 
     def color_from_score_discrete(s):
@@ -1029,8 +1099,10 @@ elif page == "Map View":
         return PAL[min(BINS - 1, int(round(t * (BINS - 1))))]
 
     def color_for_rank(rank, score):
-        try: rnk = int(rank)
-        except: rnk = 0
+        try:
+            rnk = int(rank)
+        except:
+            rnk = 0
         if rnk == 1: return PAL[-1]
         if rnk == 2: return PAL[-2]
         if rnk == 3: return PAL[-3]
@@ -1038,19 +1110,21 @@ elif page == "Map View":
 
     for ftr in geojson_data.get('features', []):
         name_raw = ftr.get('properties', {}).get('name')
-        if not name_raw: continue
+        if not name_raw:
+            continue
         key = str(name_raw).replace(" ", "")
         info = ranking_lookup.get(key)
         if info is not None:
             rank = int(info.get('Rank'))
-            try: score = float(info.get('Điểm TOPSIS (0-1)'))
-            except: score = 0.0
+            try:
+                score = float(info.get('Điểm TOPSIS (0-1)'))
+            except:
+                score = 0.0
             ftr['properties'].update(Rank=rank, Score=score, color=color_for_rank(rank, score))
         else:
             ftr['properties'].update(Rank="N/A", Score=None, color=PAL[0])
 
     st.subheader("Bản đồ Xếp hạng TOPSIS")
-
     view_state = pdk.ViewState(latitude=10.73, longitude=106.72, zoom=13, pitch=0, bearing=0)
     layer = pdk.Layer(
         "GeoJsonLayer",
@@ -1068,3 +1142,22 @@ elif page == "Map View":
     tooltip = {"html": "<b>Phường:</b> {name}<br/><b>Hạng:</b> {Rank}<br/><b>Điểm TOPSIS:</b> {Score}",
                "style": {"backgroundColor": "steelblue", "color": "white"}}
     st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view_state, map_style=pdk.map_styles.LIGHT, tooltip=tooltip), use_container_width=True)
+
+    # NEW: nút xuất PDF đồng bộ màu Map View
+    c1, c2 = st.columns([1,3])
+    with c1:
+        if 'create_full_report' in globals():
+            if st.button("Xuất PDF (MapView)", use_container_width=True):
+                try:
+                    with open(F("data/weights.yaml"), "r", encoding="utf-8") as f:
+                        all_weights = yaml.safe_load(f) or {}
+                    pdf_path = create_full_report(model_to_map, all_weights, hue=hue)
+                    if pdf_path and os.path.exists(pdf_path):
+                        with open(pdf_path, "rb") as fh:
+                            st.download_button("Tải PDF", fh, file_name=os.path.basename(pdf_path), mime="application/pdf", use_container_width=True)
+                    else:
+                        st.error("Xuất PDF thất bại.")
+                except Exception as e:
+                    st.error(f"Lỗi tạo PDF: {e}")
+        else:
+            st.caption("Thiếu report_module, không thể xuất PDF.")
