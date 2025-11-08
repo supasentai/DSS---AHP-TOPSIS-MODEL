@@ -51,6 +51,11 @@ except ImportError as e:
 # =========================
 st.set_page_config(page_title="DSS Quận 7", page_icon="🦈", layout="wide")
 
+st.markdown("""
+<style>
+.model-status{font-size:2rem;font-weight:600;margin:.25rem 0 0;color:#f59e0b}
+</style>
+""", unsafe_allow_html=True)
 
 # =========================
 # UI helpers
@@ -84,6 +89,16 @@ def inject_global_css():
 }
 
 /* header-only tooltips */
+/* tooltip sizing override: do not shrink to cell width */
+.styled-table th[data-tip]{position:relative; overflow: visible;}
+.styled-table th[data-tip]:hover::after{
+  white-space: nowrap;
+  width: max-content;
+  max-width: none;
+  z-index: 9999;
+}
+.styled-table th[data-tip]:hover::before{ z-index: 9999; }
+
 .styled-table th[data-tip]{position:relative}
 .styled-table th[data-tip]:hover::before{
   content:"";position:absolute;left:50%;top:calc(100% + 2px);transform:translateX(-50%);
@@ -157,6 +172,9 @@ def to_html_table(df: pd.DataFrame, bold_first_col: bool = True) -> str:
         if str(c).strip() == "ward_id"
         or str(c).strip().lower().replace(" ", "").replace("-", "") in {"wardid", "maphuong", "maward"}
     ]
+    # also drop any pandas index dump columns like 'Unnamed: 0'
+    drop_unnamed = [c for c in df2.columns if str(c).strip().lower().startswith('unnamed')]
+    drop_candidates = list(drop_candidates) + drop_unnamed
     if drop_candidates:
         df2 = df2.drop(columns=drop_candidates, errors="ignore")
     df2.columns = [nice_name(c) if "_" in str(c) else str(c) for c in df2.columns]
@@ -355,6 +373,42 @@ for k, v in {
     if k not in st.session_state:
         st.session_state[k] = v
 
+
+def _restore_page_state(page_name: str):
+    store = st.session_state.get("_page_states", {}).get(page_name, {})
+    for k, v in store.items():
+        if _is_forbidden_widget_key(k):
+            continue
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+
+def _is_forbidden_widget_key(k: str) -> bool:
+    s = str(k)
+    # data_editor widgets created in AHP editors use keys like pw_*_df, cust_*_df
+    if s.endswith("_df") and (s.startswith("pw_") or s.startswith("cust_") or "editor" in s):
+        return True
+    return False
+def _remember_page_state(page_name: str, prefixes: list[str] | tuple[str, ...]):
+    store = {}
+    # include exact matches and prefix matches
+    for k, v in st.session_state.items():
+        if any(k == pf or k.startswith(pf) for pf in prefixes):
+            store[k] = v
+    all_states = dict(st.session_state.get("_page_states", {}))
+    all_states[page_name] = store
+    st.session_state["_page_states"] = all_states
+def _remember_for(page_name: str):
+    mapping = {
+        "Homepage": ['page_navigator'],
+        "Tổng quan Dữ liệu": ["data_overview_"],
+        "Tùy chỉnh Trọng số (AHP)": ["ahp_wizard","scenario_selectbox","new_model_mode","chk_","pw_new_editor","pw_edit_","new_block","cust_","del_feats_","save_pw_","save_num_","cust_mode_"],
+        "Phân tích Địa điểm (TOPSIS)": ["scenario_selectbox","topsis_model_selector","last_topsis_df","last_topsis_model"],
+        "Phân tích Độ nhạy (What-if)": ["whatif_model_selector","slider_","last_whatif_rank_changes"],
+        "Map View": ["map_hue","model_for_next_page"],
+    }
+    _remember_page_state(page_name, mapping.get(page_name, []))
+
 def go(page_name: str):
     st.session_state.pending_nav = page_name
     st.rerun()
@@ -410,12 +464,18 @@ if st.session_state.pending_nav:
     st.session_state.pending_nav = None
 
 st.sidebar.title("Menu")
+
+# remember current page's state before switching (captures latest widget values)
+_prev_page_for_remember = st.session_state.get("page_navigator")
 page = st.sidebar.radio(
     "Chọn một trang:",
     ["Homepage", "Tổng quan Dữ liệu", "Tùy chỉnh Trọng số (AHP)", "Phân tích Địa điểm (TOPSIS)", "Phân tích Độ nhạy (What-if)", "Map View"],
     key="page_navigator",
 )
+_restore_page_state(page)
 
+if _prev_page_for_remember and _prev_page_for_remember != page:
+    _remember_for(_prev_page_for_remember)
 
 # =========================
 # Page: Homepage
@@ -437,6 +497,8 @@ if page == "Homepage":
     show_home_summary()
 
 
+
+    _remember_page_state("Homepage", ['page_navigator'])
 # =========================
 # Page: Data Overview
 # =========================
@@ -511,7 +573,7 @@ elif page == "Tổng quan Dữ liệu":
         criteria_list = [c for c in df.columns if c not in ['ward', 'ward_id']]
         cdisp_map = criteria_display_map(criteria_list, metadata)
         options = [cdisp_map[c] for c in criteria_list]
-        selected_label = st.selectbox("Chọn tiêu chí:", options)
+        selected_label = st.selectbox("Chọn tiêu chí:", options, key="data_overview_criterion")
         inv_map = {v: k for k, v in cdisp_map.items()}
         selected_criterion = inv_map[selected_label]
 
@@ -636,6 +698,7 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
         st.error(f"Lỗi đọc weights.yaml: {e}")
         all_weights = {}
 
+    
     st.subheader("1. Lựa chọn Kịch bản (Scenario)")
     model_list = ["Tạo mô hình mới"] + list(all_weights.keys())
 
@@ -644,67 +707,81 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
     if _after and _after in model_list:
         _def_idx = model_list.index(_after)
 
-    selected_scenario = st.selectbox(
-        "Chọn một kịch bản có sẵn hoặc tạo mới:",
-        model_list,
-        index=_def_idx,
-        key="scenario_selectbox",
+    # Step-2 của wizard tạo mới: ẩn toàn bộ Phần 1
+    _wiz = st.session_state.get("ahp_wizard", {})
+    _is_new_step2 = (
+        st.session_state.get("scenario_selectbox", "Tạo mô hình mới") == "Tạo mô hình mới"
+        and isinstance(_wiz, dict) and _wiz.get("step") == 2
     )
 
-    def _protected_scenarios():
-        prot = {"Office", "Default", "Baseline"}
-        for cand in [F("defaultweights.yaml"), F("data/defaultweights.yaml"), F("default_weights.yaml")]:
-            try:
-                if os.path.exists(cand):
-                    with open(cand, "r", encoding="utf-8") as f:
-                        d = yaml.safe_load(f) or {}
-                        if isinstance(d, dict):
-                            prot.update({str(k) for k in d.keys()})
-            except Exception:
-                pass
-        return prot
-
-    ac1, ac2 = st.columns([2, 1])
-    with ac1:
-        st.button(
-            "Tiếp tục tới phân tích (TOPSIS)",
-            use_container_width=True,
-            disabled=(selected_scenario == "Tạo mô hình mới"),
-            key="btn_next_to_topsis",
-            on_click=lambda: (
-                st.session_state.update({
-                    "selected_model_for_topsis": selected_scenario,
-                    "auto_run_topsis": True,
-                    "customize_mode": False,
-                }),
-                go("Phân tích Địa điểm (TOPSIS)")
-            ),
+    if _is_new_step2:
+        selected_scenario = "Tạo mô hình mới"
+        st.markdown(
+            f"<div class='model-status'>Kịch bản đang tạo: <b style='color:#10b981'>{_wiz.get('name') or 'Custom'}</b></div>",
+            unsafe_allow_html=True
         )
-        if selected_scenario == "Tạo mô hình mới":
-            st.caption("Chọn một kịch bản trước khi tiếp tục.")
-    with ac2:
-        prot = _protected_scenarios()
-        can_delete = (selected_scenario not in ("Tạo mô hình mới",)) and (selected_scenario not in prot)
-        if st.button("Xóa kịch bản", use_container_width=True, disabled=not can_delete, key="btn_delete_scenario"):
-            try:
-                wf = F("data/weights.yaml")
-                data = {}
-                if os.path.exists(wf):
-                    with open(wf, "r", encoding="utf-8") as f:
-                        data = yaml.safe_load(f) or {}
-                if isinstance(data, dict) and selected_scenario in data:
-                    data.pop(selected_scenario, None)
-                    with open(wf, "w", encoding="utf-8") as f:
-                        yaml.safe_dump(data, f, allow_unicode=True, sort_keys=True)
-                    st.success(f"Đã xóa kịch bản '{selected_scenario}'.")
-                    st.session_state["_after_delete_select"] = "Tạo mô hình mới"
-                    st.rerun()
-                else:
-                    st.warning("Không tìm thấy kịch bản để xóa.")
-            except Exception as e:
-                st.error(f"Lỗi khi xóa: {e}")
-        if not can_delete:
-            st.caption("Không thể xóa kịch bản mặc định hoặc khi chưa chọn kịch bản.")
+    else:
+        selected_scenario = st.selectbox(
+            "Chọn một kịch bản có sẵn hoặc tạo mới:",
+            model_list,
+            index=_def_idx,
+            key="scenario_selectbox",
+        )
+
+        def _protected_scenarios():
+            prot = {"Office", "Default", "Baseline"}
+            for cand in [F("defaultweights.yaml"), F("data/defaultweights.yaml"), F("default_weights.yaml")]:
+                try:
+                    if os.path.exists(cand):
+                        with open(cand, "r", encoding="utf-8") as f:
+                            d = yaml.safe_load(f) or {}
+                            if isinstance(d, dict):
+                                prot.update({str(k) for k in d.keys()})
+                except Exception:
+                    pass
+            return prot
+
+        ac1, ac2 = st.columns([2, 1])
+        with ac1:
+            st.button(
+                "Tiếp tục tới phân tích (TOPSIS)",
+                use_container_width=True,
+                disabled=(selected_scenario == "Tạo mô hình mới"),
+                key="btn_next_to_topsis",
+                on_click=lambda: (
+                    st.session_state.update({
+                        "selected_model_for_topsis": selected_scenario,
+                        "auto_run_topsis": True,
+                        "customize_mode": False,
+                    }),
+                    go("Phân tích Địa điểm (TOPSIS)")
+                ),
+            )
+            if selected_scenario == "Tạo mô hình mới":
+                st.caption("Chọn một kịch bản trước khi tiếp tục.")
+        with ac2:
+            prot = _protected_scenarios()
+            can_delete = (selected_scenario not in ("Tạo mô hình mới",)) and (selected_scenario not in prot)
+            if st.button("Xóa kịch bản", use_container_width=True, disabled=not can_delete, key="btn_delete_scenario"):
+                try:
+                    wf = F("data/weights.yaml")
+                    data = {}
+                    if os.path.exists(wf):
+                        with open(wf, "r", encoding="utf-8") as f:
+                            data = yaml.safe_load(f) or {}
+                    if isinstance(data, dict) and selected_scenario in data:
+                        data.pop(selected_scenario, None)
+                        with open(wf, "w", encoding="utf-8") as f:
+                            yaml.safe_dump(data, f, allow_unicode=True, sort_keys=True)
+                        st.success(f"Đã xóa kịch bản '{selected_scenario}'.")
+                        st.session_state["_after_delete_select"] = "Tạo mô hình mới"
+                        st.rerun()
+                    else:
+                        st.warning("Không tìm thấy kịch bản để xóa.")
+                except Exception as e:
+                    st.error(f"Lỗi khi xóa: {e}")
+            if not can_delete:
+                st.caption("Không thể xóa kịch bản mặc định hoặc khi chưa chọn kịch bản.")
 
     if 'ahp_wizard' not in st.session_state:
         st.session_state.ahp_wizard = {"step": 1, "name": "", "selected": []}
@@ -755,40 +832,31 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
             model_name = st.text_input("Đặt tên mô hình", value=w.get("name") or "Custom")
             st.session_state.ahp_wizard["name"] = model_name
             st.session_state.ahp_wizard["selected"] = sorted(list(chosen))
-            st.button("Next", disabled=(len(chosen)<2 or not model_name.strip()), on_click=lambda: st.session_state.ahp_wizard.update(step=2))
+            st.button("Next", disabled=(len(chosen)<2 or not model_name.strip()), on_click=lambda: (st.session_state.pop("new_model_mode", None), st.session_state.ahp_wizard.update(step=2)))
         else:
             selected = st.session_state.ahp_wizard["selected"]
             model_name = st.session_state.ahp_wizard["name"].strip()
             st.subheader("Bước 2: So sánh/Chấm điểm")
-            mode_new = st.radio("Chọn phương thức nhập", ["Pairwise (AHP)", "Direct rating (1–10)"], horizontal=True, key="new_model_mode")
+            mode_new = st.radio("Chọn phương thức nhập", ["Pairwise (AHP)", "Direct rating (1–10)"], index=1, horizontal=True, key="new_model_mode")
 
             if mode_new == "Pairwise (AHP)":
                 A_input = _pairwise_matrix_editor(selected, session_key="pw_new_editor")
                 M_norm = _normalize_columns(A_input)
 
-                c1, c2 = st.columns(2)
-                with c1:
-                    if st.button("Tính AHP và Lưu"):
-                        weights_vec, _ = calculate_ahp_weights(M_norm)
-                        if weights_vec is not None:
-                            s = float(sum(weights_vec)) or 1.0
-                            weights_norm = {k: float(v) / s for k, v in zip(selected, weights_vec)}
-                            ok, _ = save_weights_to_yaml(weights_norm, model_name, filename=F("data/weights.yaml"))
-                            _notify_saved(ok)
-                        else:
-                            st.error("Không tính được trọng số.")
+                c2 = st.container()
                 with c2:
-                    if st.button("Tính + Lưu + Chạy TOPSIS"):
+                    if st.button("Lưu + Chạy TOPSIS"):
                         weights_vec, _ = calculate_ahp_weights(M_norm)
                         if weights_vec is not None:
                             s = float(sum(weights_vec)) or 1.0
                             weights_norm = {k: float(v) / s for k, v in zip(selected, weights_vec)}
-                            ok, _ = save_weights_to_yaml(weights_norm, model_name, filename=F("data/weights.yaml"))
+                            ok, saved_name = save_weights_to_yaml(weights_norm, model_name, filename=F("data/weights.yaml"))
                             _notify_saved(ok)
                             if ok:
-                                _run_topsis_from(model_name)
+                                _run_topsis_from(saved_name or model_name)
                         else:
                             st.error("Không tính được trọng số.")
+
             else:
                 st.caption("Direct rating 1–10. Hệ thống chuẩn hoá về tổng = 1.")
                 scores = _direct_rating_2col(selected, {}, "new_block")
@@ -797,11 +865,12 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
                 dfw = pd.DataFrame([(nice_name(k), scores[k], weights_norm[k]) for k in selected],
                                    columns=["Tiêu chí","Điểm 1–10","Trọng số (chuẩn hoá)"])
                 st.dataframe(dfw, hide_index=True, use_container_width=True)
-                if st.button("Lưu + Chạy TOPSIS (Direct rating)"):
-                    ok, _ = save_weights_to_yaml(weights_norm, model_name, filename=F("data/weights.yaml"))
+                if st.button("Lưu + Chạy TOPSIS"):
+                    ok, saved_name = save_weights_to_yaml(weights_norm, model_name, filename=F("data/weights.yaml"))
                     _notify_saved(ok)
                     if ok:
-                        _run_topsis_from(model_name)
+                        _run_topsis_from(saved_name or model_name)
+
 
             if st.button("Quay lại bước 1"):
                 st.session_state.ahp_wizard["step"] = 1; st.rerun()
@@ -823,7 +892,7 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
                 st.stop()
 
             _ui_delete_features(selected_scenario, current_weights)
-            mode = st.radio("Phương thức chỉnh", ["Pairwise (AHP)", "Direct rating (1–10)"], horizontal=True, key=f"cust_mode_{selected_scenario}")
+            mode = st.radio("Phương thức chỉnh", ["Pairwise (AHP)", "Direct rating (1–10)"], index=1, horizontal=True, key=f"cust_mode_{selected_scenario}")
             features = list(current_weights.keys())
 
             if mode == "Pairwise (AHP)":
@@ -855,6 +924,8 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
                     _notify_saved(ok)
 
 
+
+    _remember_page_state("Tùy chỉnh Trọng số (AHP)", ["ahp_wizard","scenario_selectbox","new_model_mode","chk_","pw_new_editor","pw_edit_","new_block","cust_","del_feats_","save_pw_","save_num_","cust_mode_"])
 # =========================
 # Page: TOPSIS
 # =========================
@@ -942,13 +1013,18 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
         else:
             st.error("Lỗi khi phân tích TOPSIS.")
 
-    # 3) Autorun hợp nhất, không dùng các cờ khác
-    if st.session_state.pop("topsis_autorun", False):
+    # 3) Hiển thị ngay nếu đã có kết quả cho mô hình đang chọn
+    cached_df = st.session_state.get('last_topsis_df')
+    cached_model = st.session_state.get('last_topsis_model')
+    if isinstance(cached_df, pd.DataFrame) and not cached_df.empty and cached_model == selected_model:
+        run_and_display_topsis(selected_model)  # sẽ chỉ render bảng từ cache và cập nhật nút
+    elif st.session_state.pop('topsis_autorun', False):
         run_and_display_topsis(selected_model)
     else:
         if st.button(f"Chạy '{selected_model.upper()}'"):
             run_and_display_topsis(selected_model)
 
+    _remember_page_state("Phân tích Địa điểm (TOPSIS)", ["scenario_selectbox","topsis_model_selector","last_topsis_df","last_topsis_model"])
 # =========================
 # Page: What-if
 # =========================
@@ -990,6 +1066,34 @@ elif page == "Phân tích Độ nhạy (What-if)":
         index=idx,
         key=selectbox_key_whatif
     )
+    # Hiển thị ngay nếu đã có kết quả What-if cho mô hình này
+    _w_cache_model = st.session_state.get("whatif_cached_model")
+    _w_orig = st.session_state.get("whatif_original_df")
+    _w_new = st.session_state.get("whatif_new_df")
+    _w_weights = st.session_state.get("whatif_cached_weights") or {}
+    if _w_cache_model == selected_model and isinstance(_w_orig, pd.DataFrame) and isinstance(_w_new, pd.DataFrame) and not _w_orig.empty and not _w_new.empty:
+        st.info("Hiển thị kết quả What-if đã lưu. Bấm chạy lại nếu bạn đã thay đổi slider.")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.subheader("Xếp hạng gốc")
+            display_table(add_index_col(_w_orig.copy(), "STT"), True, 420)
+        with c2:
+            st.subheader("Xếp hạng mới")
+            display_table(add_index_col(_w_new.copy(), "STT"), True, 420)
+        st.divider()
+        st.subheader("So sánh phân bổ trọng số")
+        original_weights = all_weights.get(selected_model, {})
+        _new_weights_for_chart = _w_weights if _w_weights else original_weights
+        st.altair_chart(
+            pie_compare_weight(
+                original_weights, _new_weights_for_chart,
+                title_left="1. Gốc", title_right="2. Mới"
+            ),
+            use_container_width=True,
+        )
+        st.subheader("Bảng thay đổi thứ hạng")
+        if "last_whatif_rank_changes" in st.session_state and isinstance(st.session_state["last_whatif_rank_changes"], pd.DataFrame):
+            display_table(st.session_state["last_whatif_rank_changes"][["Tên phường","Hạng Mới","Hạng Gốc","Thay đổi"]], True, 420)
 
     # 3) Giao diện điều chỉnh trọng số
     if selected_model:
@@ -1027,6 +1131,10 @@ elif page == "Phân tích Độ nhạy (What-if)":
         if st.button("Chạy What-if"):
             original_df, new_df = run_what_if_analysis(selected_model, normalized_weights, all_weights)
             if original_df is not None and new_df is not None:
+                st.session_state["whatif_original_df"] = original_df.copy()
+                st.session_state["whatif_new_df"] = new_df.copy()
+                st.session_state["whatif_cached_model"] = selected_model
+                st.session_state["whatif_cached_weights"] = dict(normalized_weights)
                 c1, c2 = st.columns(2)
                 with c1:
                     st.subheader("Xếp hạng gốc")
@@ -1060,6 +1168,8 @@ elif page == "Phân tích Độ nhạy (What-if)":
                 st.error("Lỗi khi chạy What-if.")
 
 
+
+    _remember_page_state("Phân tích Độ nhạy (What-if)", ["whatif_","whatif_model_selector","slider_","last_whatif_rank_changes"])
 # =========================
 # Page: Map View
 # =========================
@@ -1070,6 +1180,7 @@ elif page == "Map View":
     if not model_to_map:
         st.warning("Cần chạy TOPSIS trước để chọn mô hình."); st.stop()
     st.success(f"Kết quả cho mô hình: **{model_to_map}**")
+    st.session_state["last_map_model"] = model_to_map
 
     # NEW: thêm 'Xanh dương'
     hue_label = st.radio("Màu heatmap", ["Xanh lá", "Đỏ", "Xanh dương"], horizontal=True, key="map_hue")
@@ -1180,3 +1291,5 @@ elif page == "Map View":
 
 
 
+
+    _remember_page_state("Map View", ["map_","map_hue", "model_for_next_page"])
