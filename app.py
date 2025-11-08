@@ -1143,21 +1143,40 @@ elif page == "Map View":
                "style": {"backgroundColor": "steelblue", "color": "white"}}
     st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view_state, map_style=pdk.map_styles.LIGHT, tooltip=tooltip), use_container_width=True)
 
+    
+    
+    
     # NEW: nút xuất PDF đồng bộ màu Map View
     c1, c2 = st.columns([1,3])
     with c1:
-        if 'create_full_report' in globals():
-            if st.button("Xuất PDF (MapView)", use_container_width=True):
-                try:
-                    with open(F("data/weights.yaml"), "r", encoding="utf-8") as f:
-                        all_weights = yaml.safe_load(f) or {}
-                    pdf_path = create_full_report(model_to_map, all_weights, hue=hue)
-                    if pdf_path and os.path.exists(pdf_path):
-                        with open(pdf_path, "rb") as fh:
-                            st.download_button("Tải PDF", fh, file_name=os.path.basename(pdf_path), mime="application/pdf", use_container_width=True)
-                    else:
-                        st.error("Xuất PDF thất bại.")
-                except Exception as e:
-                    st.error(f"Lỗi tạo PDF: {e}")
-        else:
-            st.caption("Thiếu report_module, không thể xuất PDF.")
+        ph = st.empty()
+        with ph.container():
+            if 'create_full_report' in globals():
+                # Trạng thái xuất để tránh trắng màn hình
+                exporting_key = "map_exporting"
+                if st.session_state.get(exporting_key, False):
+                    try:
+                        with st.status("Đang xuất PDF...", expanded=True) as status:
+                            with open(F("data/weights.yaml"), "r", encoding="utf-8") as f:
+                                all_weights = yaml.safe_load(f) or {}
+                            pdf_path = create_full_report(model_to_map, all_weights, hue=hue)
+                            if pdf_path and os.path.exists(pdf_path):
+                                status.update(label="Xuất xong", state="complete")
+                                st.success("Đã xuất PDF.")
+                                st.caption(pdf_path)
+                            else:
+                                status.update(label="Xuất thất bại", state="error")
+                                st.error("Xuất PDF thất bại.")
+                    except Exception as e:
+                        st.error(f"Lỗi tạo PDF: {e}")
+                    finally:
+                        st.session_state[exporting_key] = False
+                else:
+                    if st.button("Xuất PDF", use_container_width=True, key="export_map_pdf"):
+                        st.session_state[exporting_key] = True
+                        st.rerun()
+            else:
+                st.caption("Thiếu report_module, không thể xuất PDF.")
+
+
+

@@ -11,6 +11,9 @@ import matplotlib.pyplot as plt
 import geopandas
 from fpdf import FPDF
 
+import matplotlib
+matplotlib.use('Agg')
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 # =========================
 # Paths
 # =========================
@@ -20,8 +23,7 @@ DATA_PATH = "data/AHP_Data_synced_fixed.xlsx"
 GEOJSON_PATH = "data/quan7_geojson.json"
 RANKING_DIR = "data"
 REPORT_OUTPUT_DIR = "reports"
-TEMP_ASSET_DIR = os.path.join(REPORT_OUTPUT_DIR, "temp_assets")
-
+TEMP_ASSET_DIR = os.path.join(MODULE_DIR, REPORT_OUTPUT_DIR, 'temp_assets')
 # =========================
 # Palette
 # =========================
@@ -198,6 +200,7 @@ def _generate_weights_pie_chart(weights_dict: Dict, output_path: str) -> Optiona
         plt.setp(autotexts, size=10, weight="bold", color="black")
         ax.set_title("Phân bổ Trọng số Tiêu chí (AHP)", size=16, weight="bold")
 
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         plt.savefig(output_path, bbox_inches="tight", dpi=150)
         plt.close(fig)
         return output_path
@@ -376,7 +379,7 @@ def create_full_report(model_name: str, all_weights: Dict, hue: str = "blue") ->
     pdf.add_page()
     pdf.section_title("1. Phân bổ Trọng số (AHP)")
     page_w = pdf.w - 2 * pdf.l_margin
-    if pie_path:
+    if pie_path and os.path.exists(pie_path):
         pdf.image(pie_path, x=pdf.l_margin, y=None, w=page_w * 0.9)
         pdf.ln(4)
 
@@ -397,7 +400,7 @@ def create_full_report(model_name: str, all_weights: Dict, hue: str = "blue") ->
     # Page 4: radar
     pdf.add_page()
     pdf.section_title("3. Hồ sơ Top 3 Phường (Biểu đồ Radar)")
-    if radar_path:
+    if radar_path and os.path.exists(radar_path):
         pdf.image(radar_path, x=pdf.l_margin, y=None, w=page_w)
     else:
         pdf.cell(0, 10, "(Không thể tạo biểu đồ radar)", 0, 1, "L")
@@ -407,7 +410,7 @@ def create_full_report(model_name: str, all_weights: Dict, hue: str = "blue") ->
     pdf.section_title("4. Phân tích Tiêu chí Chi tiết (Giá trị gốc)")
     for key in ["population_density", "rental_cost", "competition_pressure"]:
         path = bar_paths.get(key)
-        if path:
+        if path and os.path.exists(path):
             pdf.image(path, x=pdf.l_margin, y=None, w=page_w)
             pdf.ln(4)
             # tách trang cho đồ thị tiếp theo nếu còn
@@ -417,7 +420,7 @@ def create_full_report(model_name: str, all_weights: Dict, hue: str = "blue") ->
     # Page 7: map
     pdf.add_page()
     pdf.section_title("5. Trực quan Bản đồ Xếp hạng")
-    if map_path:
+    if map_path and os.path.exists(map_path):
         pdf.image(map_path, x=pdf.l_margin, y=None, w=page_w)
     else:
         pdf.cell(0, 10, "(Không thể tạo bản đồ)", 0, 1, "L")
