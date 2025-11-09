@@ -51,12 +51,12 @@ Bạn cần có **Python 3.8+** và **Git** đã được cài đặt.
 git clone [https://github.com/supasentai/DSS---AHP-TOPSIS-MODEL.git](https://github.com/supasentai/DSS---AHP-TOPSIS-MODEL.git)
 cd DSS---AHP-TOPSIS-MODEL
 ```
-**2. (Khuyến nghị) Tạo và kích hoạt môi trường ảo**
+**2. Tạo và kích hoạt môi trường ảo**
 
 Để tránh xung đột thư viện, bạn nên tạo một môi trường ảo (virtual environment):
 
 ```bash
-# Tạo môi trường ảo (chỉ cần làm một lần)
+# Tạo môi trường ảo
 python -m venv venv
 
 # Kích hoạt môi trường
