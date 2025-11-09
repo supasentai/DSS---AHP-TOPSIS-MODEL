@@ -50,4 +50,54 @@ Bạn cần có **Python 3.8+** và **Git** đã được cài đặt.
 ```bash
 git clone [https://github.com/supasentai/DSS---AHP-TOPSIS-MODEL.git](https://github.com/supasentai/DSS---AHP-TOPSIS-MODEL.git)
 cd DSS---AHP-TOPSIS-MODEL
+```
+**2. (Khuyến nghị) Tạo và kích hoạt môi trường ảo**
 
+Để tránh xung đột thư viện, bạn nên tạo một môi trường ảo (virtual environment):
+
+```bash
+# Tạo môi trường ảo (chỉ cần làm một lần)
+python -m venv venv
+
+# Kích hoạt môi trường
+# Trên Windows
+.\venv\Scripts\activate
+# Trên macOS/Linux
+source venv/bin/activate
+```
+
+**3. Cài đặt các thư viện cần thiết**
+
+Dự án này sử dụng các thư viện được liệt kê trong file `requirements.txt`. Hãy cài đặt chúng bằng pip:
+
+```bash
+pip install -r requirements.txt
+```
+
+*(Giả định file này tồn tại, nếu chưa có, bạn cần tạo file `requirements.txt` với nội dung như `streamlit`, `pandas`, `numpy`, `pyyaml`)*
+
+**4. Khởi chạy ứng dụng**
+
+Hệ thống có hai phiên bản để khởi chạy:
+
+**a) Giao diện Web (Streamlit):**
+
+Chạy lệnh sau:
+
+```bash
+streamlit run app.py
+```
+
+*(Giả sử file Streamlit chính tên là `app.py`)*
+
+Một tab mới trên trình duyệt sẽ tự động mở, trỏ đến `http://localhost:8501`, nơi bạn có thể tương tác với hệ thống.
+
+**b) Giao diện Dòng lệnh (CLI):**
+
+Để chạy phiên bản CLI (thường dùng để kiểm thử nhanh):
+
+```bash
+python cli.py
+```
+
+*(Giả sử file CLI chính tên là `cli.py`)*
