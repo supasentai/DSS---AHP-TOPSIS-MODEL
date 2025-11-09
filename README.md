@@ -88,8 +88,6 @@ Chạy lệnh sau:
 streamlit run app.py
 ```
 
-*(Giả sử file Streamlit chính tên là `app.py`)*
-
 Một tab mới trên trình duyệt sẽ tự động mở, trỏ đến `http://localhost:8501`, nơi bạn có thể tương tác với hệ thống.
 
 **b) Giao diện Dòng lệnh (CLI):**
@@ -99,5 +97,3 @@ Một tab mới trên trình duyệt sẽ tự động mở, trỏ đến `http:
 ```bash
 python cli.py
 ```
-
-*(Giả sử file CLI chính tên là `cli.py`)*
