@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="5d64dcf4-be98-4fd0-b318-402db6ba5927" name="Changes" comment="Commit UI cua Thien">
+      <change afterPath="$PROJECT_DIR$/data/VietNam_provinces.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Font/DejaVuSans-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Font/DejaVuSans-BoldOblique.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Font/DejaVuSans-ExtraLight.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Font/DejaVuSans-Oblique.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Font/DejaVuSans.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Font/DejaVuSansCondensed-Bold.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Font/DejaVuSansCondensed-BoldOblique.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Font/DejaVuSansCondensed-Oblique.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Font/DejaVuSansCondensed.ttf" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/app.py" beforeDir="false" afterPath="$PROJECT_DIR$/app.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/AHP_Data_synced_fixed.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/data/AHP_Data_synced_fixed.xlsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/metadata.json" beforeDir="false" afterPath="$PROJECT_DIR$/data/metadata.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/quan7_geojson.json" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/data/weights.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/data/weights.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/topsis_module.py" beforeDir="false" afterPath="$PROJECT_DIR$/topsis_module.py" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {}
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/supasentai/DSS---AHP-TOPSIS-MODEL&quot;,
+    &quot;accountId&quot;: &quot;1637fd61-4c44-4111-98f1-1215b49311f3&quot;
+  }
+}</component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 1
+}</component>
+  <component name="ProjectId" id="34mmlJF8tZvFWCmAzfP4ddP46uF" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python.app.executor&quot;: &quot;Run&quot;,
+    &quot;Python.lite_model.executor&quot;: &quot;Run&quot;,
+    &quot;Python.report_module.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/Tun tun/OneDrive/Desktop/DSS---AHP-TOPSIS-MODEL/ahp_module.py&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  }
+}</component>
+  <component name="SharedIndexes">
+    <attachedChunks>
+      <set>
+        <option value="bundled-js-predefined-d6986cc7102b-1632447f56bf-JavaScript-PY-243.26053.29" />
+        <option value="bundled-python-sdk-b1dbf8ef85a6-4df51de95216-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-243.26053.29" />
+      </set>
+    </attachedChunks>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="5d64dcf4-be98-4fd0-b318-402db6ba5927" name="Changes" comment="" />
+      <created>1761827270929</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1761827270929</updated>
+      <workItem from="1761827272040" duration="401000" />
+      <workItem from="1761836966909" duration="324000" />
+      <workItem from="1761871812471" duration="1122000" />
+      <workItem from="1762081947186" duration="2803000" />
+      <workItem from="1762237257996" duration="13937000" />
+      <workItem from="1762270387332" duration="2693000" />
+      <workItem from="1762352323764" duration="11610000" />
+      <workItem from="1762446646309" duration="1834000" />
+      <workItem from="1762518895687" duration="2263000" />
+      <workItem from="1762594876353" duration="1021000" />
+      <workItem from="1762614471344" duration="2160000" />
+      <workItem from="1762650386908" duration="3570000" />
+      <workItem from="1762934562343" duration="5353000" />
+      <workItem from="1762941437597" duration="3248000" />
+    </task>
+    <task id="LOCAL-00001" summary="Commit UI cua Thien">
+      <option name="closed" value="true" />
+      <created>1762082085175</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1762082085175</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="OPEN_GENERIC_TABS">
+      <map>
+        <entry key="ef3c55da-dea2-42f4-a3be-412d36ca37e3" value="TOOL_WINDOW" />
+      </map>
+    </option>
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State>
+              <option name="FILTERS">
+                <map>
+                  <entry key="branch">
+                    <value>
+                      <list>
+                        <option value="origin/main" />
+                      </list>
+                    </value>
+                  </entry>
+                </map>
+              </option>
+            </State>
+          </value>
+        </entry>
+        <entry key="ef3c55da-dea2-42f4-a3be-412d36ca37e3">
+          <value>
+            <State>
+              <option name="FILTERS">
+                <map>
+                  <entry key="branch">
+                    <value>
+                      <list>
+                        <option value="main" />
+                      </list>
+                    </value>
+                  </entry>
+                </map>
+              </option>
+            </State>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Commit UI cua Thien" />
+    <option name="LAST_COMMIT_MESSAGE" value="Commit UI cua Thien" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/topsis_module.py</url>
+          <line>74</line>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+  </component>
+  <component name="com.intellij.coverage.CoverageDataManagerImpl">
+    <SUITE FILE_PATH="coverage/DSS___AHP_TOPSIS_MODEL$lite_model.coverage" NAME="lite_model Coverage Results" MODIFIED="1762405097647" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/DSS___AHP_TOPSIS_MODEL$report_module.coverage" NAME="report_module Coverage Results" MODIFIED="1762399972722" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/DSS___AHP_TOPSIS_MODEL$app.coverage" NAME="app Coverage Results" MODIFIED="1762259707620" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+  </component>
+</project>

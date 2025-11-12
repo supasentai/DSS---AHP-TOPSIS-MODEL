@@ -71,7 +71,7 @@ def run_topsis_model(
         valid_criteria = [c for c in crit_types if c in weights and c in df.columns]
         weights = {k: v for k, v in weights.items() if k in valid_criteria}
 
-        df_locations = df[["ward"]].copy()
+        df_locations = df[["Tỉnh/Thành phố"]].copy()
         df_data = df[valid_criteria].astype(float)
     except Exception as e:
         print(f"Lỗi khi đọc dữ liệu: {e}")
@@ -116,13 +116,13 @@ def run_topsis_model(
     out = out.sort_values(by="TOPSIS_Score", ascending=False)
     out["Rank"] = range(1, len(out) + 1)
 
-    report_df = out.rename(columns={"ward": "Tên phường", "TOPSIS_Score": "Điểm TOPSIS (0-1)"})
+    report_df = out.rename(columns={"Tỉnh/Thành phố": "Tên Tỉnh/Thành", "TOPSIS_Score": "Điểm TOPSIS (0-1)"})
 
     # Lưu Excel nếu không phải mô hình tạm
     if "temp" not in analysis_type:
         fn = f"data/ranking_result_{analysis_type}.xlsx"
         try:
-            report_df.to_excel(fn)  # giữ nguyên hành vi: mặc định có index
+            report_df.to_excel(fn, index=False)  # giữ nguyên hành vi: mặc định có index
             print(f"Đã lưu: {fn}")
         except Exception as e:
             print(f"Lỗi khi lưu file: {e}")

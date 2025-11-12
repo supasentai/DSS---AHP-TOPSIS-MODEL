@@ -1154,16 +1154,16 @@ elif page == "Phân tích Độ nhạy (What-if)":
                 )
 
                 st.subheader("Bảng thay đổi thứ hạng")
-                df_orig_simple = original_df[['Tên phường', 'Rank']].rename(columns={'Rank': 'Hạng Gốc'})
-                df_new_simple = new_df[['Tên phường', 'Rank']].rename(columns={'Rank': 'Hạng Mới'})
-                df_rank_change = pd.merge(df_orig_simple, df_new_simple, on='Tên phường')
+                df_orig_simple = original_df[['Tên Tỉnh/Thành', 'Rank']].rename(columns={'Rank': 'Hạng Gốc'})
+                df_new_simple = new_df[['Tên Tỉnh/Thành', 'Rank']].rename(columns={'Rank': 'Hạng Mới'})
+                df_rank_change = pd.merge(df_orig_simple, df_new_simple, on='Tên Tỉnh/Thành')
                 df_rank_change['Thay đổi (số)'] = df_rank_change['Hạng Gốc'] - df_rank_change['Hạng Mới']
                 # f-string đúng cho cả số âm
                 df_rank_change['Thay đổi'] = df_rank_change['Thay đổi (số)'] \
                     .apply(lambda d: f"▲ +{d}" if d > 0 else (f"▼ {d}" if d < 0 else "—"))
                 df_rank_change = df_rank_change.sort_values(by='Hạng Mới')
                 st.session_state['last_whatif_rank_changes'] = df_rank_change.copy()
-                display_table(df_rank_change[['Tên phường', 'Hạng Mới', 'Hạng Gốc', 'Thay đổi']], True, 420)
+                display_table(df_rank_change[['Tên Tỉnh/Thành', 'Hạng Mới', 'Hạng Gốc', 'Thay đổi']], True, 420)
             else:
                 st.error("Lỗi khi chạy What-if.")
 
@@ -1186,14 +1186,22 @@ elif page == "Map View":
     hue_label = st.radio("Màu heatmap", ["Xanh lá", "Đỏ", "Xanh dương"], horizontal=True, key="map_hue")
     hue = {"Xanh lá": "green", "Đỏ": "red", "Xanh dương": "blue"}[hue_label]
 
-    geojson_file = "quan7_geojson.json"
+    geojson_file = "VietNam_provinces.json"
     ranking_file = f"ranking_result_{model_to_map}.xlsx"
 
     with open(F(geojson_file), 'r', encoding='utf-8') as f:
         geojson_data = json.load(f)
     df_ranking = pd.read_excel(F(ranking_file))
 
-    ranking_lookup = {str(r['Tên phường']).replace(" ", ""): r.to_dict() for _, r in df_ranking.iterrows()}
+    try:
+        ranking_lookup = {
+            str(r['Tên Tỉnh/Thành']).replace(" ", "").lower(): r.to_dict()
+            for _, r in df_ranking.iterrows()
+        }
+    except KeyError:
+        st.error(
+            "LỖI: File xếp hạng (Excel) không có cột 'Tên Tỉnh/Thành'. Vui lòng kiểm tra lại file hoặc module TOPSIS.")
+        st.stop()
 
     # --- mở rộng palette rời rạc cho pydeck ---
     def mono_palette(h):
@@ -1219,12 +1227,30 @@ elif page == "Map View":
         if rnk == 3: return PAL[-3]
         return color_from_score_discrete(score)
 
+
+    features_found = 0
+    # [FIX 2] Thay 'name' thành 'NAME_1' (hoặc key tên tỉnh trong file GeoJSON)
+    geojson_key_to_join = 'NAME_1'
+
+
     for ftr in geojson_data.get('features', []):
-        name_raw = ftr.get('properties', {}).get('name')
+        name_raw = ftr.get('properties', {}).get(geojson_key_to_join)
         if not name_raw:
             continue
-        key = str(name_raw).replace(" ", "")
+
+        # Chuẩn hóa key join: Xóa dấu, xóa khoảng trắng, đưa về chữ thường
+        # Ví dụ: "Bà Rịa - Vũng Tàu" -> "bariavungtau"
+        # Cần chuẩn hóa cả hai phía (Excel và GeoJSON) để đảm bảo join khớp
+        key = str(name_raw).replace(" ", "").lower()
+        # (Bạn nên xem xét thư viện `unidecode` để xử lý tiếng Việt tốt hơn nếu cần)
+
         info = ranking_lookup.get(key)
+
+        # Thử tìm lại nếu không khớp (ví dụ: "Bà Rịa - Vũng Tàu" vs "Bà Rịa–Vũng Tàu")
+        if info is None:
+            key_alt = str(name_raw)
+            info = ranking_lookup.get(key_alt)
+
         if info is not None:
             rank = int(info.get('Rank'))
             try:
@@ -1232,11 +1258,18 @@ elif page == "Map View":
             except:
                 score = 0.0
             ftr['properties'].update(Rank=rank, Score=score, color=color_for_rank(rank, score))
+            features_found += 1
         else:
-            ftr['properties'].update(Rank="N/A", Score=None, color=PAL[0])
+            ftr['properties'].update(Rank="N/A", Score=None, color=PAL[0])  # Tô màu nhạt nhất cho tỉnh không có data
+
+    if features_found == 0:
+        st.warning(f"Không thể join bất kỳ tỉnh nào giữa Excel và GeoJSON (dùng key '{geojson_key_to_join}'). "
+                   "Hãy kiểm tra sự khác biệt về tên (ví dụ: 'Bà Rịa - Vũng Tàu' vs 'Bà Rịa–Vũng Tàu').")
+    else:
+        st.info(f"Đã join thành công {features_found} / 63 tỉnh.")
 
     st.subheader("Bản đồ Xếp hạng TOPSIS")
-    view_state = pdk.ViewState(latitude=10.73, longitude=106.72, zoom=13, pitch=0, bearing=0)
+    view_state = pdk.ViewState(latitude=16.0, longitude=108.0, zoom=5, pitch=0, bearing=0)
     layer = pdk.Layer(
         "GeoJsonLayer",
         geojson_data,
@@ -1250,8 +1283,9 @@ elif page == "Map View":
         pickable=True,
         auto_highlight=True,
     )
-    tooltip = {"html": "<b>Phường:</b> {name}<br/><b>Hạng:</b> {Rank}<br/><b>Điểm TOPSIS:</b> {Score}",
-               "style": {"backgroundColor": "steelblue", "color": "white"}}
+    tooltip = {
+        "html": f"<b>Tỉnh:</b> {{{geojson_key_to_join}}}<br/><b>Hạng:</b> {{Rank}}<br/><b>Điểm TOPSIS:</b> {{Score}}",
+        "style": {"backgroundColor": "steelblue", "color": "white"}}
     st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view_state, map_style=pdk.map_styles.LIGHT, tooltip=tooltip), use_container_width=True)
 
     

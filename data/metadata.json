@@ -1,83 +1,93 @@
 {
-  "ward": {
-      "display_name": "Tên phường",
-      "unit": "",
-      "type": "id",
-      "description": "Đơn vị hành chính cấp phường trong quận.",
-      "source": "Danh sách phường Quận 7"
+  "Tỉnh/Thành phố": {
+    "display_name": "Tên Tỉnh/Thành",
+    "unit": "",
+    "type": "id",
+    "description": "Đơn vị hành chính cấp Tỉnh/Thành phố.",
+    "source": "DSS-data.xlsx - Tổng hợp"
   },
-  "ward_id": {
-      "display_name": "Mã phường",
-      "unit": "",
-      "type": "id",
-      "description": "ID nội bộ dùng để join / merge dữ liệu và geojson.",
-      "source": "Gán bởi nhóm dự án"
+  "CSTP 1: Gia nhập thị trường": {
+    "display_name": "Gia nhập thị trường",
+    "unit": "Điểm",
+    "type": "benefit",
+    "description": "Chỉ số đo lường mức độ dễ dàng khi gia nhập thị trường tại tỉnh.",
+    "source": "DSS-data.xlsx - Tổng hợp"
   },
-  "population_density": {
-      "display_name": "Mật độ dân cư",
-      "unit": "người/km²",
-      "type": "benefit",
-      "description": "Mức độ tập trung dân cư tại phường. Mật độ cao → nhiều khách tiềm năng xung quanh điểm đặt chi nhánh.",
-      "source": "Giả lập từ ước lượng dân số / diện tích"
+  "CSTP 2: Tiếp cận đất đai": {
+    "display_name": "Tiếp cận đất đai",
+    "unit": "Điểm",
+    "type": "benefit",
+    "description": "Chỉ số đo lường mức độ dễ dàng trong việc tiếp cận đất đai và sự ổn định.",
+    "source": "DSS-data.xlsx - Tổng hợp"
   },
-  "population_growth": {
-      "display_name": "Tốc độ tăng trưởng dân số",
-      "unit": "% tăng trưởng / năm (hoặc thang điểm ~2.5-4.5)",
-      "type": "benefit",
-      "description": "Tốc độ gia tăng dân số cơ học (người nhập cư) và tự nhiên. Tăng trưởng cao cho thấy khu vực đang thu hút dân cư. hứa hẹn gia tăng nhu cầu trong tương lai.",
-      "source": "Giả lập từ tốc độ lấp đầy các dự án chung cư mới. xu hướng dịch chuyển dân cư."
+  "CSTP 3: Tính minh bạch": {
+    "display_name": "Tính minh bạch",
+    "unit": "Điểm",
+    "type": "benefit",
+    "description": "Chỉ số đo lường sự minh bạch của thông tin và quy trình.",
+    "source": "DSS-data.xlsx - Tổng hợp"
   },
-  "GDP": {
-      "display_name": "Quy mô kinh tế địa phương",
-      "unit": "tỷ VND/năm (ví dụ 1200–2800)",
-      "type": "benefit",
-      "description": "Sức nặng kinh tế tổng thể của phường (quy mô giao dịch. hoạt động kinh doanh hiện hữu). Cao → thị trường lớn hiện tại.",
-      "source": "Ước lượng quy mô kinh tế tương đối giữa các phường"
+  "CSTP 4: Chi phí thời gian": {
+    "display_name": "Chi phí thời gian",
+    "unit": "Điểm",
+    "type": "cost",
+    "description": "Chỉ số đo lường thời gian doanh nghiệp phải bỏ ra cho các thủ tục hành chính. Càng thấp càng tốt.",
+    "source": "DSS-data.xlsx - Tổng hợp"
   },
-  "rental_cost": {
-      "display_name": "Giá thuê mặt bằng",
-      "unit": "triệu VND / m² / tháng",
-      "type": "cost",
-      "description": "Chi phí thuê địa điểm kinh doanh/ kho / nhà xưởng. Càng thấp càng tốt cho chi phí ban đầu và chi phí vận hành.",
-      "source": "Giả lập dựa trên mức sang trọng / trung tâm của phường"
+  "CSTP 5: Chi phí không chính thức": {
+    "display_name": "Chi phí không chính thức",
+    "unit": "Điểm",
+    "type": "cost",
+    "description": "Chỉ số đo lường gánh nặng chi phí không chính thức. Càng thấp càng tốt.",
+    "source": "DSS-data.xlsx - Tổng hợp"
   },
-  "accessibility_distance": {
-      "display_name": "Khoảng cách tới trục giao thông / trung tâm hoạt động",
-      "unit": "km",
-      "type": "cost",
-      "description": "Khoảng cách tới các nút quan trọng (trung tâm thương mại lớn, trục Nguyễn Văn Linh,...). Càng gần càng thuận tiện tiếp cận khách / vận chuyển.",
-      "source": "Ước lượng địa lý nội bộ nhóm"
+  "CSTP 6: Cạnh tranh bình đẳng": {
+    "display_name": "Cạnh tranh bình đẳng",
+    "unit": "Điểm",
+    "type": "benefit",
+    "description": "Chỉ số đo lường môi trường cạnh tranh công bằng, bình đẳng.",
+    "source": "DSS-data.xlsx - Tổng hợp"
   },
-  "infrastructure_quality": {
-      "display_name": "Chất lượng hạ tầng",
-      "unit": "thang điểm 1–10",
-      "type": "benefit",
-      "description": "Mức độ hoàn thiện đường xá. điện nước. khả năng xe tải ra/vào. tình trạng ngập. Cao → dễ vận hành. ít rủi ro kỹ thuật.",
-      "source": "Đánh giá chủ quan của nhóm dự án dựa trên quan sát thực địa / kiến thức địa phương"
+  "CSTP 7: Tính năng động": {
+    "display_name": "Tính Năng động",
+    "unit": "Điểm",
+    "type": "benefit",
+    "description": "Chỉ số đo lường sự năng động, sáng tạo của chính quyền tỉnh.",
+    "source": "DSS-data.xlsx - Tổng hợp"
   },
-  "amenity_score": {
-      "display_name": "Tiện ích xung quanh",
-      "unit": "thang điểm 1–10",
-      "type": "benefit",
-      "description": "Mức độ sẵn có của tiện ích hỗ trợ (TTTM. trường học. bệnh viện. ngân hàng. khu dân cư cao cấp). Cao → phù hợp văn phòng / dịch vụ khách hàng.",
-      "source": "Đánh giá chủ quan kết hợp đếm POI (Points of Interest)"
+  "CSTP 8: Chính sách hỗ trợ doanh nghiệp": {
+    "display_name": "Chính sách hỗ trợ DN",
+    "unit": "Điểm",
+    "type": "benefit",
+    "description": "Chỉ số đo lường hiệu quả của các chính sách hỗ trợ doanh nghiệp.",
+    "source": "DSS-data.xlsx - Tổng hợp"
   },
-  "safety_score": {
-      "display_name": "An ninh khu vực",
-      "unit": "thang điểm 1–10",
-      "type": "benefit",
-      "description": "Mức độ an toàn và ổn định xã hội. Cao → ít rủi ro trộm cắp. hình ảnh thương hiệu tốt hơn.",
-      "source": "Đánh giá chủ quan từ cảm nhận dân cư khu vực"
+  "CSTP 9: Đào tạo lao động": {
+    "display_name": "Đào tạo lao động",
+    "unit": "Điểm",
+    "type": "benefit",
+    "description": "Chỉ số đo lường chất lượng và sự sẵn có của lực lượng lao động đã qua đào tạo.",
+    "source": "DSS-data.xlsx - Tổng hợp"
   },
-  "competition_pressure": {
-      "display_name": "Áp lực cạnh tranh",
-      "unit": "số lượng đối thủ tương tự / mức độ dày đặc thị trường",
-      "type": "cost",
-      "description": "Mức độ hiện diện đối thủ trong cùng phân khúc. Cao → thị trường đã bão hòa. khó tạo khác biệt.",
-      "source": "Đếm thủ công (Google Maps. khảo sát)"
+  "CSTP 10: Thiết chế pháp lý & An ninh trật tự": {
+    "display_name": "Thiết chế pháp lý và ANTT",
+    "unit": "Điểm",
+    "type": "benefit",
+    "description": "Chỉ số đo lường mức độ tin cậy của thiết chế pháp lý và tình hình an ninh trật tự.",
+    "source": "DSS-data.xlsx - Tổng hợp"
+  },
+  "CSTP 11: Tập trung Dân cư": {
+    "display_name": "Tập trung dân cư",
+    "unit": "Điểm",
+    "type": "benefit",
+    "description": "Chỉ số đo lường mức độ tập trung dân cư (tương tự mật độ dân số), giả định là lợi ích (benefit).",
+    "source": "DSS-data.xlsx - Tổng hợp"
+  },
+  "CSTP 12: Chỉ số bão hòa khu vực": {
+    "display_name": "Bão hòa khu vực",
+    "unit": "Điểm",
+    "type": "cost",
+    "description": "Chỉ số đo lường mức độ cạnh tranh hoặc bão hòa thị trường. Càng thấp càng tốt.",
+    "source": "DSS-data.xlsx - Tổng hợp"
   }
 }
-
-
-
-
