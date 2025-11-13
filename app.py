@@ -58,6 +58,58 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =========================
+# === Generic dataset helpers ===
+def _detect_id_col(df):
+    if df is None or getattr(df, "empty", False):
+        return None
+    candidates = ["ward","ward_id","Tỉnh/Thành phố","Tinh/Thanh pho","Tinh_Thanh","Province","Location","Tên phường","Tên địa phương"]
+    for c in candidates:
+        if c in df.columns:
+            return c
+    # fallback: first non-numeric column
+    for c in df.columns:
+        try:
+            pd.to_numeric(df[c])
+        except Exception:
+            return c
+    # final fallback
+    return df.columns[0] if len(df.columns) else None
+
+def _count_units(df):
+    col = _detect_id_col(df)
+    if df is None or col is None:
+        return 0
+    try:
+        return int(df[col].nunique())
+    except Exception:
+        return int(len(df))
+
+def _count_criteria(df):
+    # Try metadata.json if available
+    try:
+        meta = load_metadata()
+        crit_cols = [k for k,v in meta.items() if v.get("type") in ("benefit","cost")]
+        present = [c for c in crit_cols if c in getattr(df, "columns", [])]
+        if present:
+            return len(present)
+    except Exception:
+        pass
+    # Fallback: numeric columns excluding id-like
+    id_like = {"ward","ward_id","Tỉnh/Thành phố","Tinh/Thanh pho","Tinh_Thanh","Province","Location","Vùng","Region","Tên phường","Tên địa phương"}
+    if df is None:
+        return 0
+    cnt = 0
+    for c in df.columns:
+        if c in id_like: 
+            continue
+        s = df[c]
+        try:
+            pd.to_numeric(s)
+            cnt += 1
+        except Exception:
+            continue
+    return cnt
+
 # UI helpers
 # =========================
 def _notify_saved(ok: bool):
@@ -72,7 +124,12 @@ def inject_global_css():
 <style>
 .styled-table{width:100%;border-collapse:collapse;border-spacing:0;table-layout:auto;margin-bottom:24px}
 .styled-table th,.styled-table td{padding:12px 14px;text-align:center;vertical-align:middle}
-.fixed-height{max-height:420px;overflow:auto;margin-bottom:32px}
+.fixed-height{max-height:420px;overflow:auto;margin-bottom:32px;overflow-x:auto}
+.fixed-height.compact{max-height:360px}
+.styled-table.compact th,.styled-table.compact td{padding:6px 8px;font-size:12px}
+.styled-table.compact thead th{font-size:12px}
+.styled-table th{white-space:nowrap}
+.styled-table td{white-space:nowrap}
 
 /* light */
 .styled-table{border:4px solid #1F2937;background:#FFF}
@@ -165,7 +222,7 @@ def add_index_col(df: pd.DataFrame, label: str = "STT") -> pd.DataFrame:
     out.insert(0, label, range(1, len(out) + 1))
     return out
 
-def to_html_table(df: pd.DataFrame, bold_first_col: bool = True) -> str:
+def to_html_table(df: pd.DataFrame, bold_first_col: bool = True, compact: bool=False) -> str:
     df2 = df.copy()
     drop_candidates = [
         c for c in df2.columns
@@ -181,10 +238,10 @@ def to_html_table(df: pd.DataFrame, bold_first_col: bool = True) -> str:
     if bold_first_col and df2.shape[1] > 0:
         first = df2.columns[0]
         df2[first] = df2[first].map(lambda x: f"<strong>{x}</strong>")
-    return df2.to_html(index=False, escape=False, classes="styled-table")
+    return df2.to_html(index=False, escape=False, classes=("styled-table compact" if compact else "styled-table"))
 
-def display_table(df, bold_first_col=True, fixed_height=420, header_tooltips=None):
-    html_tbl = to_html_table(df, bold_first_col=bold_first_col)
+def display_table(df, bold_first_col=True, fixed_height=420, header_tooltips=None, compact=False):
+    html_tbl = to_html_table(df, bold_first_col=bold_first_col, compact=compact)
     if '<table' in html_tbl:
         open_tag = html_tbl.split('>', 1)[0]
         if 'class=' not in open_tag:
@@ -194,8 +251,8 @@ def display_table(df, bold_first_col=True, fixed_height=420, header_tooltips=Non
     html_tbl = re.sub(r'\sdata-tip="[^"]*"', '', html_tbl)
     if header_tooltips:
         html_tbl = _inject_tooltips_on_th(html_tbl, header_tooltips)
-    h = "" if fixed_height is None else f"max-height:{int(fixed_height)}px;overflow:auto;"
-    st.markdown(f'<div class="fixed-height" style="{h}">{html_tbl}</div>', unsafe_allow_html=True)
+    h = "" if fixed_height is None else f"max-height:{int(fixed_height)}px;overflow:auto;overflow-x:auto;"
+    st.markdown(f'<div class="fixed-height{" compact" if compact else ""}" style="{h}">{html_tbl}</div>', unsafe_allow_html=True)
 
 
 @st.cache_data
@@ -290,13 +347,13 @@ def show_home_summary():
         try:
             df = pd.read_excel(F("AHP_Data_synced_fixed.xlsx"))
             metadata = load_metadata()
-            n_ward = int(df["ward"].nunique()) if "ward" in df.columns else len(df)
+            n_ward = _count_units(df)
             crits = [c for c in df.columns if c not in ("ward","ward_id")]
             types = [metadata.get(c,{}).get("type","") for c in crits]
             n_benefit = sum(1 for t in types if t=="benefit")
             n_cost = sum(1 for t in types if t=="cost")
-            st.metric("Số phường", n_ward)
-            st.metric("Số tiêu chí", len(crits), help=f"Benefit: {n_benefit} · Cost: {n_cost}")
+            st.metric("Số địa phương", _count_units(df))
+            st.metric("Số tiêu chí", _count_criteria(df), help=f"Benefit: {n_benefit} · Cost: {n_cost}")
         except Exception:
             st.info("Chưa có dữ liệu để tóm tắt.")
 
@@ -330,7 +387,7 @@ def show_home_summary():
     last_topsis_model = st.session_state.get("last_topsis_model")
     if last_topsis_df is not None and not last_topsis_df.empty:
         top3 = add_index_col(last_topsis_df.head(3).copy(), "STT")
-        display_table(top3, bold_first_col=True, fixed_height=200)
+        display_table(top3, bold_first_col=True, fixed_height=200, compact=True)
         if last_topsis_model:
             st.caption(f"Mô hình: {last_topsis_model}")
     else:
@@ -469,7 +526,7 @@ st.sidebar.title("Menu")
 _prev_page_for_remember = st.session_state.get("page_navigator")
 page = st.sidebar.radio(
     "Chọn một trang:",
-    ["Homepage", "Tổng quan Dữ liệu", "Tùy chỉnh Trọng số (AHP)", "Phân tích Địa điểm (TOPSIS)", "Phân tích Độ nhạy (What-if)", "Map View"],
+    ["Dashboard", "Tổng quan Dữ liệu", "Tùy chỉnh Trọng số (AHP)", "Phân tích Địa điểm (TOPSIS)", "Phân tích Độ nhạy (What-if)", "Map View"],
     key="page_navigator",
 )
 _restore_page_state(page)
@@ -477,8 +534,7 @@ _restore_page_state(page)
 if _prev_page_for_remember and _prev_page_for_remember != page:
     _remember_for(_prev_page_for_remember)
 
-# =========================
-# Page: Homepage
+
 # =========================
 if page == "Homepage":
     st.header("Trang chủ")
@@ -499,6 +555,77 @@ if page == "Homepage":
 
 
     _remember_page_state("Homepage", ['page_navigator'])
+
+# =========================
+# Page: Dashboard
+# =========================
+elif page == "Dashboard":
+    st.header("Dashboard")
+
+    # KPIs
+    try:
+        _df_dash = pd.read_excel(F("AHP_Data_synced_fixed.xlsx"))
+    except Exception:
+        _df_dash = None
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Số địa phương", _count_units(_df_dash))
+    c2.metric("Số tiêu chí", _count_criteria(_df_dash))
+    try:
+        with open(F("data/weights.yaml"), "r", encoding="utf-8") as _f:
+            _w = yaml.safe_load(_f) or {}
+            n_models = len(_w) if isinstance(_w, dict) else 0
+    except Exception:
+        n_models = 0
+    c3.metric("Số mô hình AHP", n_models)
+    last_topsis_model = st.session_state.get("last_topsis_model")
+    c4.metric("Mô hình TOPSIS gần nhất", last_topsis_model if last_topsis_model else "—")
+
+    st.divider()
+
+    # Quick actions
+    qa1, qa2, qa3, qa4 = st.columns(4)
+    qa1.button("AHP", use_container_width=True, on_click=lambda: go("Tùy chỉnh Trọng số (AHP)"))
+    qa2.button("TOPSIS", use_container_width=True, on_click=lambda: go("Phân tích Địa điểm (TOPSIS)"))
+    qa3.button("What-if", use_container_width=True, on_click=lambda: go("Phân tích Độ nhạy (What-if)"))
+    qa4.button("Map View", use_container_width=True, on_click=switch_to_map_view)
+
+    st.divider()
+
+    # Summary reuse
+    show_home_summary()
+
+    
+    st.subheader("Tổng quan nhanh")
+    left, right = st.columns([1.2, 1.8])
+
+    with left:
+        st.markdown("**Top 5 xếp hạng gần nhất**")
+        _last = st.session_state.get("last_topsis_df")
+        if isinstance(_last, pd.DataFrame) and not _last.empty:
+            _top5 = add_index_col(_last.head(5).copy(), "STT")
+            display_table(_top5, bold_first_col=True, fixed_height=280, compact=True)
+        else:
+            st.caption("Chưa có kết quả TOPSIS.")
+
+    with right:
+        st.markdown("**Phân bổ trọng số (mục tiêu)**")
+        try:
+            with open(F("data/weights.yaml"), "r", encoding="utf-8") as _f2:
+                _allw = yaml.safe_load(_f2) or {}
+        except Exception:
+            _allw = {}
+        _model = st.session_state.get("last_topsis_model") or (list(_allw.keys())[0] if isinstance(_allw, dict) and _allw else None)
+        if _model and _allw:
+            _w0 = _allw.get(_model, {})
+            try:
+                st.altair_chart(pie_compare_weight(_w0, _w0, title_left="Gốc", title_right="—"), use_container_width=True)
+            except Exception:
+                st.json(_w0)
+        else:
+            st.caption("Chưa có mô hình trọng số.")
+
+    st.divider()
+    _remember_page_state("Dashboard", ["dashboard_", "page_navigator"])
 # =========================
 # Page: Data Overview
 # =========================
@@ -523,8 +650,8 @@ elif page == "Tổng quan Dữ liệu":
 
     with tab1:
         col1, col2 = st.columns(2)
-        col1.metric("Số phường", int(df["ward"].nunique()))
-        col2.metric("Số tiêu chí", int(len(df.columns) - 2))
+        col1.metric("Số địa phương", _count_units(df))
+        col2.metric("Số tiêu chí", _count_criteria(df))
 
         def _resolve_desc_tooltips(ddf):
             base = {
@@ -557,20 +684,22 @@ elif page == "Tổng quan Dữ liệu":
             return tips
 
     st.subheader("Thống kê Mô tả")
-    desc = df.drop(columns=["ward", "ward_id"]).describe().T.reset_index().rename(columns={"index": "Tiêu chí"})
+    drop_cols = [c for c in ["ward","ward_id"] if c in df.columns]
+    desc = df.drop(columns=drop_cols).describe().T.reset_index().rename(columns={"index": "Tiêu chí"})
     desc["Tiêu chí"] = desc["Tiêu chí"].map(lambda x: name_map.get(x, nice_name(x)))
     _desc_view = apply_display_names(desc)
-    display_table(_desc_view, bold_first_col=True, fixed_height=360, header_tooltips=_resolve_desc_tooltips(_desc_view))
+    display_table(_desc_view, bold_first_col=True, fixed_height=320, header_tooltips=_resolve_desc_tooltips(_desc_view), compact=True)
 
     st.subheader("Bảng Dữ liệu gốc")
     raw = df.copy().drop(columns=['ward_id'], errors='ignore').rename(columns=name_map)
-    if 'ward' in raw.columns:
-        raw['ward'] = raw['ward'].astype(str).str.title()
-    display_table(add_index_col(raw, "STT"), bold_first_col=True, fixed_height=420)
+    id_col = _detect_id_col(raw)
+    if id_col in raw.columns:
+        raw[id_col] = raw[id_col].astype(str).str.title()
+    display_table(add_index_col(raw, "STT"), bold_first_col=True, fixed_height=360, compact=True)
 
     with tab2:
         st.subheader("Chi tiết theo tiêu chí")
-        criteria_list = [c for c in df.columns if c not in ['ward', 'ward_id']]
+        criteria_list = [c for c in df.columns if c not in ['ward','ward_id','Tỉnh/Thành phố']]
         cdisp_map = criteria_display_map(criteria_list, metadata)
         options = [cdisp_map[c] for c in criteria_list]
         selected_label = st.selectbox("Chọn tiêu chí:", options, key="data_overview_criterion")
@@ -588,18 +717,26 @@ elif page == "Tổng quan Dữ liệu":
 
         col1, col2 = st.columns([1, 2])
         with col1:
-            st.subheader("Top 5 phường")
+            st.subheader("Top 5 địa phương")
             is_cost = (c_type == 'cost')
             sorted_df = df.sort_values(by=selected_criterion, ascending=is_cost).head(5)
-            show = sorted_df[['ward', selected_criterion]].rename(columns={'ward': 'Tên phường', selected_criterion: full_name})
+            idc = _detect_id_col(sorted_df) or 'Địa phương'
+            show = sorted_df[[idc, selected_criterion]].rename(columns={idc: 'Địa phương', selected_criterion: full_name})
             display_table(add_index_col(show, "STT"), bold_first_col=True, fixed_height=300)
         with col2:
-            st.subheader("Phân phối theo phường")
-            disp_df = df.drop(columns=['ward_id'], errors='ignore').rename(columns={'ward': 'Tên phường', selected_criterion: full_name})
+            st.subheader("Phân phối theo địa phương")
+            disp_df = df.drop(columns=['ward_id'], errors='ignore').rename(columns={selected_criterion: full_name}).copy()
+            idc = _detect_id_col(disp_df) or 'Địa phương'
+            disp_df = disp_df.rename(columns={idc: 'Địa phương'})
+            try:
+                disp_df[full_name] = pd.to_numeric(disp_df[full_name], errors='coerce')
+            except Exception:
+                pass
+            disp_df = disp_df.dropna(subset=[full_name])
             chart = alt.Chart(disp_df).mark_bar().encode(
-                x=alt.X('Tên phường', axis=alt.Axis(labelAngle=0)),
-                y=alt.Y(full_name),
-                tooltip=['Tên phường', full_name]
+                x=alt.X('Địa phương:N', axis=alt.Axis(labelAngle=0)),
+                y=alt.Y(f'{full_name}:Q'),
+                tooltip=['Địa phương', full_name]
             ).interactive()
             st.altair_chart(chart, use_container_width=True)
 
@@ -1003,7 +1140,7 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
         if report_df is not None:
             st.session_state['last_topsis_df'] = report_df.copy()
             st.subheader("Xếp hạng đầy đủ")
-            display_table(add_index_col(report_df.copy(), "STT"), bold_first_col=True, fixed_height=380)
+            display_table(add_index_col(report_df.copy(), "STT"), bold_first_col=True, fixed_height=360, compact=True)
             st.divider()
             cols = st.columns(4)
             if cols[0].button("Rerun DSS", use_container_width=True): st.rerun()
@@ -1138,10 +1275,10 @@ elif page == "Phân tích Độ nhạy (What-if)":
                 c1, c2 = st.columns(2)
                 with c1:
                     st.subheader("Xếp hạng gốc")
-                    display_table(add_index_col(original_df.copy(), "STT"), True, 420)
+                    display_table(add_index_col(original_df.copy(), "STT"), True, 360, compact=True)
                 with c2:
                     st.subheader("Xếp hạng mới")
-                    display_table(add_index_col(new_df.copy(), "STT"), True, 420)
+                    display_table(add_index_col(new_df.copy(), "STT"), True, 360, compact=True)
 
                 st.divider()
                 st.subheader("So sánh phân bổ trọng số")
@@ -1154,16 +1291,16 @@ elif page == "Phân tích Độ nhạy (What-if)":
                 )
 
                 st.subheader("Bảng thay đổi thứ hạng")
-                df_orig_simple = original_df[['Tên Tỉnh/Thành', 'Rank']].rename(columns={'Rank': 'Hạng Gốc'})
-                df_new_simple = new_df[['Tên Tỉnh/Thành', 'Rank']].rename(columns={'Rank': 'Hạng Mới'})
-                df_rank_change = pd.merge(df_orig_simple, df_new_simple, on='Tên Tỉnh/Thành')
+                df_orig_simple = original_df[['Tên phường', 'Rank']].rename(columns={'Rank': 'Hạng Gốc'})
+                df_new_simple = new_df[['Tên phường', 'Rank']].rename(columns={'Rank': 'Hạng Mới'})
+                df_rank_change = pd.merge(df_orig_simple, df_new_simple, on='Tên phường')
                 df_rank_change['Thay đổi (số)'] = df_rank_change['Hạng Gốc'] - df_rank_change['Hạng Mới']
                 # f-string đúng cho cả số âm
                 df_rank_change['Thay đổi'] = df_rank_change['Thay đổi (số)'] \
                     .apply(lambda d: f"▲ +{d}" if d > 0 else (f"▼ {d}" if d < 0 else "—"))
                 df_rank_change = df_rank_change.sort_values(by='Hạng Mới')
                 st.session_state['last_whatif_rank_changes'] = df_rank_change.copy()
-                display_table(df_rank_change[['Tên Tỉnh/Thành', 'Hạng Mới', 'Hạng Gốc', 'Thay đổi']], True, 420)
+                display_table(df_rank_change[['Tên phường', 'Hạng Mới', 'Hạng Gốc', 'Thay đổi']], True, 360, compact=True)
             else:
                 st.error("Lỗi khi chạy What-if.")
 
@@ -1186,22 +1323,14 @@ elif page == "Map View":
     hue_label = st.radio("Màu heatmap", ["Xanh lá", "Đỏ", "Xanh dương"], horizontal=True, key="map_hue")
     hue = {"Xanh lá": "green", "Đỏ": "red", "Xanh dương": "blue"}[hue_label]
 
-    geojson_file = "VietNam_provinces.json"
+    geojson_file = "quan7_geojson.json"
     ranking_file = f"ranking_result_{model_to_map}.xlsx"
 
     with open(F(geojson_file), 'r', encoding='utf-8') as f:
         geojson_data = json.load(f)
     df_ranking = pd.read_excel(F(ranking_file))
 
-    try:
-        ranking_lookup = {
-            str(r['Tên Tỉnh/Thành']).replace(" ", "").lower(): r.to_dict()
-            for _, r in df_ranking.iterrows()
-        }
-    except KeyError:
-        st.error(
-            "LỖI: File xếp hạng (Excel) không có cột 'Tên Tỉnh/Thành'. Vui lòng kiểm tra lại file hoặc module TOPSIS.")
-        st.stop()
+    ranking_lookup = {str(r['Tên phường']).replace(" ", ""): r.to_dict() for _, r in df_ranking.iterrows()}
 
     # --- mở rộng palette rời rạc cho pydeck ---
     def mono_palette(h):
@@ -1227,30 +1356,12 @@ elif page == "Map View":
         if rnk == 3: return PAL[-3]
         return color_from_score_discrete(score)
 
-
-    features_found = 0
-    # [FIX 2] Thay 'name' thành 'NAME_1' (hoặc key tên tỉnh trong file GeoJSON)
-    geojson_key_to_join = 'NAME_1'
-
-
     for ftr in geojson_data.get('features', []):
-        name_raw = ftr.get('properties', {}).get(geojson_key_to_join)
+        name_raw = ftr.get('properties', {}).get('name')
         if not name_raw:
             continue
-
-        # Chuẩn hóa key join: Xóa dấu, xóa khoảng trắng, đưa về chữ thường
-        # Ví dụ: "Bà Rịa - Vũng Tàu" -> "bariavungtau"
-        # Cần chuẩn hóa cả hai phía (Excel và GeoJSON) để đảm bảo join khớp
-        key = str(name_raw).replace(" ", "").lower()
-        # (Bạn nên xem xét thư viện `unidecode` để xử lý tiếng Việt tốt hơn nếu cần)
-
+        key = str(name_raw).replace(" ", "")
         info = ranking_lookup.get(key)
-
-        # Thử tìm lại nếu không khớp (ví dụ: "Bà Rịa - Vũng Tàu" vs "Bà Rịa–Vũng Tàu")
-        if info is None:
-            key_alt = str(name_raw)
-            info = ranking_lookup.get(key_alt)
-
         if info is not None:
             rank = int(info.get('Rank'))
             try:
@@ -1258,18 +1369,11 @@ elif page == "Map View":
             except:
                 score = 0.0
             ftr['properties'].update(Rank=rank, Score=score, color=color_for_rank(rank, score))
-            features_found += 1
         else:
-            ftr['properties'].update(Rank="N/A", Score=None, color=PAL[0])  # Tô màu nhạt nhất cho tỉnh không có data
-
-    if features_found == 0:
-        st.warning(f"Không thể join bất kỳ tỉnh nào giữa Excel và GeoJSON (dùng key '{geojson_key_to_join}'). "
-                   "Hãy kiểm tra sự khác biệt về tên (ví dụ: 'Bà Rịa - Vũng Tàu' vs 'Bà Rịa–Vũng Tàu').")
-    else:
-        st.info(f"Đã join thành công {features_found} / 63 tỉnh.")
+            ftr['properties'].update(Rank="N/A", Score=None, color=PAL[0])
 
     st.subheader("Bản đồ Xếp hạng TOPSIS")
-    view_state = pdk.ViewState(latitude=16.0, longitude=108.0, zoom=5, pitch=0, bearing=0)
+    view_state = pdk.ViewState(latitude=10.73, longitude=106.72, zoom=13, pitch=0, bearing=0)
     layer = pdk.Layer(
         "GeoJsonLayer",
         geojson_data,
@@ -1283,9 +1387,8 @@ elif page == "Map View":
         pickable=True,
         auto_highlight=True,
     )
-    tooltip = {
-        "html": f"<b>Tỉnh:</b> {{{geojson_key_to_join}}}<br/><b>Hạng:</b> {{Rank}}<br/><b>Điểm TOPSIS:</b> {{Score}}",
-        "style": {"backgroundColor": "steelblue", "color": "white"}}
+    tooltip = {"html": "<b>Phường:</b> {name}<br/><b>Hạng:</b> {Rank}<br/><b>Điểm TOPSIS:</b> {Score}",
+               "style": {"backgroundColor": "steelblue", "color": "white"}}
     st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view_state, map_style=pdk.map_styles.LIGHT, tooltip=tooltip), use_container_width=True)
 
     
