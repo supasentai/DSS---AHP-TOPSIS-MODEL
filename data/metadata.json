@@ -1,93 +1,72 @@
 {
-  "Tỉnh/Thành phố": {
-    "display_name": "Tên Tỉnh/Thành",
-    "unit": "",
-    "type": "id",
+  "province_id": {
+    "name": "Tên Tỉnh/Thành",
     "description": "Đơn vị hành chính cấp Tỉnh/Thành phố.",
-    "source": "DSS-data.xlsx - Tổng hợp"
+    "type": "id"
   },
-  "CSTP 1: Gia nhập thị trường": {
-    "display_name": "Gia nhập thị trường",
-    "unit": "Điểm",
-    "type": "benefit",
-    "description": "Chỉ số đo lường mức độ dễ dàng khi gia nhập thị trường tại tỉnh.",
-    "source": "DSS-data.xlsx - Tổng hợp"
+  "criteria_1": {
+    "name": "Entry Cost",
+    "description": "Mức độ thuận lợi khi gia nhập thị trường: chi phí, thời gian và thủ tục thành lập doanh nghiệp.",
+    "type": "benefit"
   },
-  "CSTP 2: Tiếp cận đất đai": {
-    "display_name": "Tiếp cận đất đai",
-    "unit": "Điểm",
-    "type": "benefit",
-    "description": "Chỉ số đo lường mức độ dễ dàng trong việc tiếp cận đất đai và sự ổn định.",
-    "source": "DSS-data.xlsx - Tổng hợp"
+  "criteria_2": {
+    "name": "Land Access & Land Stability",
+    "description": "Khả năng tiếp cận đất đai và mức độ ổn định trong việc sử dụng đất cho hoạt động kinh doanh.",
+    "type": "benefit"
   },
-  "CSTP 3: Tính minh bạch": {
-    "display_name": "Tính minh bạch",
-    "unit": "Điểm",
-    "type": "benefit",
-    "description": "Chỉ số đo lường sự minh bạch của thông tin và quy trình.",
-    "source": "DSS-data.xlsx - Tổng hợp"
+  "criteria_3": {
+    "name": "Transparency",
+    "description": "Mức độ minh bạch trong công khai thông tin, quy hoạch, chính sách, và khả năng tiếp cận tài liệu chính thức.",
+    "type": "benefit"
   },
-  "CSTP 4: Chi phí thời gian": {
-    "display_name": "Chi phí thời gian",
-    "unit": "Điểm",
-    "type": "cost",
-    "description": "Chỉ số đo lường thời gian doanh nghiệp phải bỏ ra cho các thủ tục hành chính. Càng thấp càng tốt.",
-    "source": "DSS-data.xlsx - Tổng hợp"
+  "criteria_4": {
+    "name": "Time Costs",
+    "description": "Chi phí thời gian liên quan đến thủ tục hành chính, xử lý hồ sơ, cấp phép và tương tác với chính quyền.",
+    "type": "benefit"
   },
-  "CSTP 5: Chi phí không chính thức": {
-    "display_name": "Chi phí không chính thức",
-    "unit": "Điểm",
-    "type": "cost",
-    "description": "Chỉ số đo lường gánh nặng chi phí không chính thức. Càng thấp càng tốt.",
-    "source": "DSS-data.xlsx - Tổng hợp"
+  "criteria_5": {
+    "name": "Informal Charges",
+    "description": "Mức độ giảm thiểu chi phí không chính thức (đã được chuẩn hóa để điểm cao nghĩa là ít chi phí không chính thức).",
+    "type": "benefit"
   },
-  "CSTP 6: Cạnh tranh bình đẳng": {
-    "display_name": "Cạnh tranh bình đẳng",
-    "unit": "Điểm",
-    "type": "benefit",
-    "description": "Chỉ số đo lường môi trường cạnh tranh công bằng, bình đẳng.",
-    "source": "DSS-data.xlsx - Tổng hợp"
+  "criteria_6": {
+    "name": "Fair Competition",
+    "description": "Mức độ cạnh tranh bình đẳng giữa các loại hình doanh nghiệp, không thiên vị doanh nghiệp nhà nước.",
+    "type": "benefit"
   },
-  "CSTP 7: Tính năng động": {
-    "display_name": "Tính Năng động",
-    "unit": "Điểm",
-    "type": "benefit",
-    "description": "Chỉ số đo lường sự năng động, sáng tạo của chính quyền tỉnh.",
-    "source": "DSS-data.xlsx - Tổng hợp"
+  "criteria_7": {
+    "name": "Proactivity",
+    "description": "Tính năng động, tiên phong, và khả năng giải quyết vấn đề nhanh từ chính quyền địa phương.",
+    "type": "benefit"
   },
-  "CSTP 8: Chính sách hỗ trợ doanh nghiệp": {
-    "display_name": "Chính sách hỗ trợ DN",
-    "unit": "Điểm",
-    "type": "benefit",
-    "description": "Chỉ số đo lường hiệu quả của các chính sách hỗ trợ doanh nghiệp.",
-    "source": "DSS-data.xlsx - Tổng hợp"
+  "criteria_8": {
+    "name": "Business Support Policies",
+    "description": "Mức độ hỗ trợ doanh nghiệp bao gồm dịch vụ, chính sách phát triển, và hỗ trợ từ các cơ quan chức năng.",
+    "type": "benefit"
   },
-  "CSTP 9: Đào tạo lao động": {
-    "display_name": "Đào tạo lao động",
-    "unit": "Điểm",
-    "type": "benefit",
-    "description": "Chỉ số đo lường chất lượng và sự sẵn có của lực lượng lao động đã qua đào tạo.",
-    "source": "DSS-data.xlsx - Tổng hợp"
+  "criteria_9": {
+    "name": "Labor Training Quality",
+    "description": "Chất lượng đào tạo lao động địa phương: kỹ năng, tay nghề và khả năng đáp ứng yêu cầu của doanh nghiệp.",
+    "type": "benefit"
   },
-  "CSTP 10: Thiết chế pháp lý & An ninh trật tự": {
-    "display_name": "Thiết chế pháp lý và ANTT",
-    "unit": "Điểm",
-    "type": "benefit",
-    "description": "Chỉ số đo lường mức độ tin cậy của thiết chế pháp lý và tình hình an ninh trật tự.",
-    "source": "DSS-data.xlsx - Tổng hợp"
+  "criteria_10": {
+    "name": "Law & Order",
+    "description": "Mức độ ổn định pháp lý, an ninh trật tự, giảm rủi ro pháp lý và bảo vệ hoạt động sản xuất – kinh doanh.",
+    "type": "benefit"
   },
-  "CSTP 11: Tập trung Dân cư": {
-    "display_name": "Tập trung dân cư",
-    "unit": "Điểm",
-    "type": "benefit",
-    "description": "Chỉ số đo lường mức độ tập trung dân cư (tương tự mật độ dân số), giả định là lợi ích (benefit).",
-    "source": "DSS-data.xlsx - Tổng hợp"
+  "criteria_11": {
+    "name": "Population Cluster (Density–Area–Population)",
+    "description": "Mức độ tập trung dân cư dựa trên diện tích, dân số trung bình và mật độ dân số, phản ánh quy mô và sức hấp dẫn thị trường.",
+    "type": "benefit"
   },
-  "CSTP 12: Chỉ số bão hòa khu vực": {
-    "display_name": "Bão hòa khu vực",
-    "unit": "Điểm",
-    "type": "cost",
-    "description": "Chỉ số đo lường mức độ cạnh tranh hoặc bão hòa thị trường. Càng thấp càng tốt.",
-    "source": "DSS-data.xlsx - Tổng hợp"
+  "criteria_12": {
+    "name": "Market Saturation",
+    "description": "Mức độ bão hòa khu vực dựa trên số doanh nghiệp, doanh thu và lợi nhuận, thể hiện sức cạnh tranh và tiềm năng tăng trưởng.",
+    "type": "benefit"
+  },
+  "region_id": {
+    "name": "Vùng",
+    "description": "Đơn vị hành chính cấp vùng: Duyên Hải Miền Trung, Đồng bằng sông Hồng,...",
+    "type": "id"
   }
 }
