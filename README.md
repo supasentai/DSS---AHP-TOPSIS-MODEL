@@ -19,16 +19,16 @@ Việc lựa chọn một địa điểm kinh doanh mới là một bài toán p
 ## Phương pháp luận
 Hệ thống kết hợp hai phương pháp MCDM phổ biến:
 1.  **AHP (Analytic Hierarchy Process):** Dùng để xác định trọng số (mức độ quan trọng) của các tiêu chí. Hệ thống cho phép người dùng tự định nghĩa trọng số thông qua ma trận so sánh cặp hoặc sử dụng các kịch bản có sẵn.
-2.  **TOPSIS (Technique for Order of Preference by Similarity to Ideal Solution):** Dùng để xếp hạng 10 phương án (phường) dựa trên bộ trọng số AHP đã cung cấp và dữ liệu thực tế của các phường.
+2.  **TOPSIS (Technique for Order of Preference by Similarity to Ideal Solution):** Dùng để xếp hạng các tỉnh và thành phố ở Việt Nam dựa trên bộ trọng số AHP đã cung cấp và dữ liệu thực tế của các tỉnh/thành phố.
 
 ## Tính năng chính
 * **Phân tích theo Kịch bản:** Cung cấp 3 kịch bản cài đặt sẵn với các bộ trọng số AHP khác nhau:
-    * **Office (Mở văn phòng):** Ưu tiên Chất lượng hạ tầng, An ninh, Tiện ích.
+    * **Office (Mở văn phòng):** Ưu tiên chất lượng Hạ tầng, An ninh, Tiện ích.
     * **Warehouse (Thuê kho xưởng):** Ưu tiên Chi phí thuê, Khoảng cách tiếp cận (logistics).
     * **Factory (Xây nhà máy):** Ưu tiên Chi phí thuê, An toàn, Tiềm năng tăng trưởng (GDP).
     * **Khác:** Tùy chọn nếu người dùng không muốn sử dụng các lựa chọn mặc định
-* **Tùy chỉnh Trọng số (AHP):** Giao diện cho phép người dùng tự điều chỉnh trọng số của 9 tiêu chí thông qua thanh trượt hoặc nhập ma trận so sánh cặp.
-* **Xếp hạng (TOPSIS):** Tự động tính toán và hiển thị bảng xếp hạng 10 phường dựa trên kịch bản được chọn.
+* **Tùy chỉnh Trọng số (AHP):** Giao diện cho phép người dùng tự điều chỉnh trọng số các tiêu chí thông qua thanh trượt hoặc nhập ma trận so sánh cặp.
+* **Xếp hạng (TOPSIS):** Tự động tính toán và hiển thị bảng xếp hạng các tỉnh/thành phố dựa trên kịch bản được chọn.
 * **Phân tích Độ nhạy (What-if):** Cho phép người dùng thay đổi nhẹ các trọng số để xem kết quả xếp hạng có thay đổi đáng kể hay không.
 * **Trực quan hóa Dữ liệu:** Hiển thị kết quả dưới nhiều hình thức:
     * Bảng xếp hạng chi tiết.
