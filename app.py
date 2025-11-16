@@ -70,24 +70,28 @@ def inject_global_css():
     st.markdown(
         """
 <style>
-.styled-table{width:100%;border-collapse:collapse;border-spacing:0;table-layout:auto;margin-bottom:24px}
-.styled-table th,.styled-table td{padding:12px 14px;text-align:center;vertical-align:middle}
+.styled-table{width:100%;border-collapse:collapse;border-spacing:0;table-layout:auto;margin-bottom:18px}
+.styled-table th,.styled-table td{padding:6px 10px;text-align:center;vertical-align:middle;font-size:0.9rem}
 .styled-table th{white-space:nowrap}
-.fixed-height{max-height:420px;overflow:auto;margin-bottom:32px}
+.fixed-height{max-height:420px;overflow:auto;margin-bottom:24px}
 
 /* light */
-.styled-table{border:4px solid #1F2937;background:#FFF}
-.styled-table thead th{font-weight:800;background:#F1F5F9;color:#0F172A;border:4px solid #1F2937}
-.styled-table tbody td{background:#FFF;color:#0F172A;border:4px solid #1F2937}
+.styled-table{border:2px solid #1F2937;background:#FFF}
+.styled-table thead th{font-weight:800;background:#F1F5F9;color:#0F172A;border:2px solid #1F2937}
+.styled-table tbody td{background:#FFF;color:#0F172A;border:2px solid #1F2937}
 .styled-table tbody td:first-child{background:#F1F5F9;color:#0F172A}
 
 /* dark */
 @media (prefers-color-scheme: dark){
-  .styled-table{border:4px solid #94A3B8;background:#0B1220}
-  .styled-table thead th{background:#0E1A2B;color:#F8FAFC;border:4px solid #94A3B8}
-  .styled-table tbody td{background:#0B1220;color:#E5E7EB;border:4px solid #94A3B8}
+  .styled-table{border:2px solid #94A3B8;background:#0B1220}
+  .styled-table thead th{background:#0E1A2B;color:#F8FAFC;border:2px solid #94A3B8}
+  .styled-table tbody td{background:#0B1220;color:#E5E7EB;border:2px solid #94A3B8}
   .styled-table tbody td:first-child{background:#0E1A2B;color:#F8FAFC}
 }
+
+
+.styled-table .col-region-header,
+.styled-table .col-region-cell{white-space:nowrap;}
 
 /* header-only tooltips */
 /* tooltip sizing override: do not shrink to cell width */
@@ -231,6 +235,20 @@ def to_html_table(df: pd.DataFrame, bold_first_col: bool = True) -> str:
     if drop_candidates:
         df2 = df2.drop(columns=drop_candidates, errors="ignore")
     df2.columns = [nice_name(c) if "_" in str(c) else str(c) for c in df2.columns]
+
+    # Giữ cột 'Vùng' trên một dòng, căn theo độ dài chữ
+    if "Vùng" in df2.columns:
+        idx = list(df2.columns).index("Vùng")
+        cols = []
+        for i, col in enumerate(df2.columns):
+            if i == idx:
+                cols.append('<span class="col-region-header">Vùng</span>')
+            else:
+                cols.append(col)
+        df2.columns = cols
+        col_name = df2.columns[idx]
+        df2[col_name] = df2[col_name].map(lambda x: f'<span class="col-region-cell">{_esc(x)}</span>')
+
     if bold_first_col and df2.shape[1] > 0:
         first = df2.columns[0]
         df2[first] = df2[first].map(lambda x: f"<strong>{x}</strong>")
@@ -327,13 +345,79 @@ def load_metadata():
     except Exception:
         return {}
 
+
+@st.cache_data
+def load_main_dataset():
+    """Đọc và ghép dữ liệu chính từ AHP_Data_synced_fixed.xlsx (Sheet1 + Tổng hợp + Vùng)."""
+    path = F("AHP_Data_synced_fixed.xlsx")
+    # Sheet numeric chính
+    df_main = pd.read_excel(path, sheet_name="Sheet1")
+    df = df_main.copy()
+
+    # Join tên Tỉnh/Thành phố từ sheet "Tổng hợp" nếu có
+    try:
+        df_info = pd.read_excel(path, sheet_name="Tổng hợp")
+        if "province_id" in df_info.columns and "Tỉnh/Thành phố" in df_info.columns:
+            df_info = df_info[["province_id", "Tỉnh/Thành phố"]].drop_duplicates(subset=["province_id"])
+            df = df.merge(df_info, on="province_id", how="left")
+    except Exception:
+        pass
+
+    # Join vùng từ sheet "Vùng" nếu có
+    try:
+        df_region = pd.read_excel(path, sheet_name="Vùng")
+        if "province_id" in df_region.columns and "region" in df_region.columns:
+            df_region = df_region[["province_id", "region"]].drop_duplicates(subset=["province_id"])
+            df = df.merge(df_region, on="province_id", how="left")
+            df = df.rename(columns={"region": "Vùng"})
+    except Exception:
+        pass
+
+    # Sắp xếp lại thứ tự cột cho dễ nhìn
+    cols = list(df.columns)
+    front = [c for c in ["Tỉnh/Thành phố", "Vùng", "province_id", "region_id"] if c in cols]
+    rest = [c for c in cols if c not in front]
+    df = df[front + rest]
+    return df
+
+
+def _meta_info_for_key(key, meta):
+    """Tra metadata linh hoạt cho một key tiêu chí:
+    - Ưu tiên key đúng
+    - Nếu không có: thử dạng lower + replace space -> underscore ("Criteria 1" → "criteria_1").
+    """
+    if key in meta:
+        return meta[key]
+    s = str(key).strip()
+    alt = s.lower().replace(" ", "_")
+    return meta.get(alt, {})
+def criterion_label(key, meta=None):
+    """Tên hiển thị của tiêu chí dựa trên metadata."""
+    if meta is None:
+        meta = load_metadata()
+    info = _meta_info_for_key(key, meta)
+    return info.get("display_name") or info.get("name") or nice_name(key)
+
+
+def sort_criteria(keys):
+    """Sắp xếp Criteria 1, 2, …, 10 đúng thứ tự số nếu có."""
+    def _k(name):
+        s = str(name).strip().lower()
+        m = re.search(r"(\d+)$", s)
+        if m:
+            return (0, int(m.group(1)))
+        return (1, s)
+    return sorted(list(keys), key=_k)
+
+
+
 def criteria_display_map(df_cols, meta):
     out = {}
     for c in df_cols:
         if c in ("ward", "ward_id"):
             continue
-        info = meta.get(c, {})
-        dn = info.get("display_name", nice_name(c))
+        info = _meta_info_for_key(c, meta)
+        dn = info.get("display_name") or info.get("name") or nice_name(c)
         tp = info.get("type", "")
         out[c] = f"{dn} ({tp.title()})" if tp else dn
     return out
@@ -416,7 +500,12 @@ def show_home_summary():
             st.caption(last_model)
             summary = summarize_weights(last_weights)
             if summary:
-                top_items = [(nice_name(k), v) for k, v in summary["top"]]
+                meta = load_metadata()
+                top_items = []
+                for k, v in summary["top"]:
+                    info = _meta_info_for_key(k, meta)
+                    label = info.get("display_name") or info.get("name") or nice_name(k)
+                    top_items.append((label, v))
                 dfw = pd.DataFrame(top_items, columns=["Tiêu chí", "Trọng số"]).reset_index(drop=True)
                 dfw = add_index_col(dfw, "STT")
                 display_table(dfw, bold_first_col=True, fixed_height=220)
@@ -478,6 +567,7 @@ for k, v in {
     'customize_mode': False,
     'selected_model_for_topsis': None,
     'auto_run_topsis': False,
+    'topsis_autorun': False,
     'last_saved_model': None,
     'last_saved_weights': None,
     'model_for_next_page': None,
@@ -616,7 +706,7 @@ if page == "Dashboard":
 elif page == "Tổng quan Dữ liệu":
     st.header("Trang 2: Khám phá và Tổng quan Dữ liệu")
     try:
-        df = pd.read_excel(F("AHP_Data_synced_fixed.xlsx"))
+        df = load_main_dataset()
         metadata = load_metadata()
     except FileNotFoundError:
         st.error("Thiếu AHP_Data_synced_fixed.xlsx hoặc metadata.json.")
@@ -626,12 +716,20 @@ elif page == "Tổng quan Dữ liệu":
         st.stop()
 
     id_col = "Tỉnh/Thành phố"
-    non_crit_cols = (id_col, "Vùng")
+    non_crit_cols = (id_col, "Vùng", "province_id", "region_id")
 
-    name_map = {
-        c: metadata.get(c, {}).get("display_name", nice_name(c))
-        for c in df.columns if c not in non_crit_cols
-    }
+    # Map từ tên cột Excel ("Criteria 1"...) sang tên hiển thị từ metadata (name/display_name)
+    name_map = {}
+    criteria_tooltips = {}
+    for c in df.columns:
+        if c in non_crit_cols:
+            continue
+        info = _meta_info_for_key(c, metadata)
+        label = info.get("display_name") or info.get("name") or nice_name(c)
+        name_map[c] = label
+        desc = info.get("description")
+        if desc:
+            criteria_tooltips[label] = desc
 
     tab1, tab2 = st.tabs(["📊 Thống kê Chung", "📈 Phân tích Từng Tiêu chí"])
 
@@ -674,6 +772,8 @@ elif page == "Tổng quan Dữ liệu":
         col1, col2 = st.columns(2)
         if id_col in df.columns:
             col1.metric("Số Tỉnh/Thành", int(df[id_col].nunique()))
+        elif "province_id" in df.columns:
+            col1.metric("Số Tỉnh/Thành", int(df["province_id"].nunique()))
         else:
             col1.metric("Số Tỉnh/Thành", len(df))
         crit_cols = [c for c in df.columns if c not in non_crit_cols]
@@ -689,6 +789,7 @@ elif page == "Tổng quan Dữ liệu":
                 bold_first_col=True,
                 fixed_height=360,
                 header_tooltips=_resolve_desc_tooltips(_desc_view),
+                zoomable=False,
             )
         else:
             st.info("Không tìm thấy tiêu chí số liệu để thống kê.")
@@ -697,7 +798,14 @@ elif page == "Tổng quan Dữ liệu":
         raw = df.copy().rename(columns=name_map)
         if id_col in raw.columns:
             raw[id_col] = raw[id_col].astype(str).str.title()
-        display_table(add_index_col(raw, "STT"), bold_first_col=True, fixed_height=420)
+        # Dùng description trong metadata làm tooltip cho tên tiêu chí (header)
+        display_table(
+            add_index_col(raw, "STT"),
+            bold_first_col=True,
+            fixed_height=420,
+            header_tooltips=criteria_tooltips,
+            zoomable=False,
+        )
 
     with tab2:
         st.subheader("Chi tiết theo tiêu chí")
@@ -711,8 +819,8 @@ elif page == "Tổng quan Dữ liệu":
             inv_map = {v: k for k, v in cdisp_map.items()}
             selected_criterion = inv_map[selected_label]
 
-            meta_info = metadata.get(selected_criterion, {})
-            full_name = meta_info.get("display_name", nice_name(selected_criterion))
+            meta_info = _meta_info_for_key(selected_criterion, metadata)
+            full_name = meta_info.get("display_name") or meta_info.get("name") or nice_name(selected_criterion)
             desc_text = meta_info.get("description", "Không có mô tả.")
             c_type = meta_info.get("type", "N/A")
 
@@ -725,14 +833,16 @@ elif page == "Tổng quan Dữ liệu":
                 st.subheader("Top 5 Tỉnh/Thành")
                 is_cost = (c_type == "cost")
                 sorted_df = df.sort_values(by=selected_criterion, ascending=is_cost).head(5)
-                show = sorted_df[[id_col, selected_criterion]].rename(
-                    columns={id_col: "Tên Tỉnh/Thành", selected_criterion: full_name}
+                id_col_use = id_col if id_col in sorted_df.columns else ("province_id" if "province_id" in sorted_df.columns else sorted_df.columns[0])
+                show = sorted_df[[id_col_use, selected_criterion]].rename(
+                    columns={id_col_use: "Tên Tỉnh/Thành", selected_criterion: full_name}
                 )
                 display_table(add_index_col(show, "STT"), bold_first_col=True, fixed_height=300)
             with col2:
                 st.subheader("Phân phối theo Tỉnh/Thành")
-                disp_df = df[[id_col, selected_criterion]].rename(
-                    columns={id_col: "Tên Tỉnh/Thành", selected_criterion: full_name}
+                id_col_use = id_col if id_col in df.columns else ("province_id" if "province_id" in df.columns else df.columns[0])
+                disp_df = df[[id_col_use, selected_criterion]].rename(
+                    columns={id_col_use: "Tên Tỉnh/Thành", selected_criterion: full_name}
                 )
                 chart = alt.Chart(disp_df).mark_bar().encode(
                     x=alt.X("Tên Tỉnh/Thành", axis=alt.Axis(labelAngle=0)),
@@ -764,7 +874,7 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
                     for _, w in all_w.items():
                         if isinstance(w, dict):
                             opts.update(map(str, w.keys()))
-        return sorted(opts)
+        return sort_criteria(opts)
 
     def _normalize_columns(A):
         A = np.array(A, dtype=float)
@@ -892,7 +1002,7 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
                 on_click=lambda: (
                     st.session_state.update({
                         "selected_model_for_topsis": selected_scenario,
-                        "auto_run_topsis": True,
+                        "topsis_autorun": True,
                         "customize_mode": False,
                     }),
                     go("Phân tích Địa điểm (TOPSIS)")
@@ -957,6 +1067,7 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
         if w["step"] == 1:
             st.subheader("Bước 1: Chọn tiêu chí")
             available = _union_criteria_from_weights()
+            meta = load_metadata()
             ui_cols = st.columns([1,1,4])
             if ui_cols[0].button("Chọn tất cả"):
                 for c in available: st.session_state[f"chk_{c}"] = True
@@ -967,13 +1078,21 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
             chosen = set(w.get("selected") or [])
             for idx, c in enumerate(available):
                 with cols[idx%3]:
-                    chk = st.checkbox(nice_name(c), value=(c in chosen), key=f"chk_{c}")
+                    label = criterion_label(c, meta)
+                    chk = st.checkbox(label, value=(c in chosen), key=f"chk_{c}")
                     (chosen.add if chk else chosen.discard)(c)
 
             model_name = st.text_input("Đặt tên mô hình", value=w.get("name") or "Custom")
             st.session_state.ahp_wizard["name"] = model_name
-            st.session_state.ahp_wizard["selected"] = sorted(list(chosen))
-            st.button("Next", disabled=(len(chosen)<2 or not model_name.strip()), on_click=lambda: (st.session_state.pop("new_model_mode", None), st.session_state.ahp_wizard.update(step=2)))
+            st.session_state.ahp_wizard["selected"] = sort_criteria(chosen)
+            st.button(
+                "Next",
+                disabled=(len(chosen)<2 or not model_name.strip()),
+                on_click=lambda: (
+                    st.session_state.pop("new_model_mode", None),
+                    st.session_state.ahp_wizard.update(step=2),
+                ),
+            )
         else:
             selected = st.session_state.ahp_wizard["selected"]
             model_name = st.session_state.ahp_wizard["name"].strip()
@@ -1159,7 +1278,7 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
     cached_model = st.session_state.get('last_topsis_model')
     if isinstance(cached_df, pd.DataFrame) and not cached_df.empty and cached_model == selected_model:
         run_and_display_topsis(selected_model)  # sẽ chỉ render bảng từ cache và cập nhật nút
-    elif st.session_state.pop('topsis_autorun', False):
+    elif st.session_state.pop('topsis_autorun', False) or st.session_state.pop('auto_run_topsis', False):
         run_and_display_topsis(selected_model)
     else:
         if st.button(f"Chạy '{selected_model.upper()}'"):
@@ -1234,7 +1353,7 @@ elif page == "Phân tích Độ nhạy (What-if)":
         )
         st.subheader("Bảng thay đổi thứ hạng")
         if "last_whatif_rank_changes" in st.session_state and isinstance(st.session_state["last_whatif_rank_changes"], pd.DataFrame):
-            display_table(st.session_state["last_whatif_rank_changes"][["Tên phường","Hạng Mới","Hạng Gốc","Thay đổi"]], True, 420)
+            display_table(st.session_state["last_whatif_rank_changes"][["Tên Tỉnh/Thành","Hạng Mới","Hạng Gốc","Thay đổi"]], True, 420)
 
     # 3) Giao diện điều chỉnh trọng số
     if selected_model:
@@ -1440,6 +1559,7 @@ elif page == "Map View":
             if 'create_full_report' in globals():
                 # Trạng thái xuất để tránh trắng màn hình
                 exporting_key = "map_exporting"
+
                 if st.session_state.get(exporting_key, False):
                     try:
                         with st.status("Đang xuất PDF...", expanded=True) as status:
