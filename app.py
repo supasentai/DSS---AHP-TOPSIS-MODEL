@@ -681,25 +681,268 @@ if _prev_page_for_remember and _prev_page_for_remember != page:
     _remember_for(_prev_page_for_remember)
 
 # =========================
-# Page: Homepage
+# Page: Homepage (Dashboard)
 # =========================
 if page == "Dashboard":
     st.header("Dashboard tổng quan")
-    st.markdown("Tổng hợp nhanh dữ liệu, mô hình AHP, kết quả TOPSIS và kịch bản What-if. Dùng các nút dưới để đi tới từng phân hệ chi tiết.")
+
+    # Hàng nút điều hướng nhanh
     c1, c2, c3 = st.columns(3)
-    if c1.button("Tổng quan Dữ liệu", use_container_width=True): go("Tổng quan Dữ liệu")
-    if c2.button("AHP – Trọng số", use_container_width=True): go("Tùy chỉnh Trọng số (AHP)")
-    if c3.button("TOPSIS – Xếp hạng", use_container_width=True): go("Phân tích Địa điểm (TOPSIS)")
+    if c1.button("Tổng quan Dữ liệu", use_container_width=True):
+        go("Tổng quan Dữ liệu")
+    if c2.button("AHP – Trọng số", use_container_width=True):
+        go("Tùy chỉnh Trọng số (AHP)")
+    if c3.button("TOPSIS – Xếp hạng", use_container_width=True):
+        go("Phân tích Địa điểm (TOPSIS)")
+
     d1, d2 = st.columns(2)
-    if d1.button("What-if – Độ nhạy", use_container_width=True): go("Phân tích Độ nhạy (What-if)")
-    if d2.button("Map View – Bản đồ", use_container_width=True): go("Map View")
+    if d1.button("What-if – Độ nhạy", use_container_width=True):
+        go("Phân tích Độ nhạy (What-if)")
+    if d2.button("Map View – Bản đồ", use_container_width=True):
+        go("Map View")
 
-    st.divider()
-    show_home_summary()
+    # CSS riêng cho Dashboard (card KPI + box)
+    st.markdown(
+        """
+        <style>
+        .kpi-row{display:flex;gap:16px;margin:18px 0}
+        .kpi-card{
+          flex:1;
+          border-radius:14px;
+          padding:14px 16px;
+          background:linear-gradient(135deg,#020617,#0f172a);
+          border:1px solid rgba(148,163,184,0.5);
+          box-shadow:0 18px 40px rgba(15,23,42,0.75);
+        }
+        .kpi-title{
+          font-size:0.8rem;
+          text-transform:uppercase;
+          letter-spacing:0.08em;
+          color:#9CA3AF;
+          margin-bottom:4px;
+        }
+        .kpi-value{
+          font-size:1.8rem;
+          font-weight:700;
+          color:#F9FAFB;
+          margin-bottom:2px;
+        }
+        .kpi-sub{
+          font-size:0.8rem;
+          color:#9CA3AF;
+        }
+        .section-box{
+          border-radius:18px;
+          padding:16px 18px;
+          background:linear-gradient(135deg,#020617,#020617);
+          border:1px solid rgba(75,85,99,0.85);
+          box-shadow:0 16px 36px rgba(15,23,42,0.85);
+          margin-top:18px;
+          margin-bottom:18px;
+        }
+        .section-title{
+          font-size:1rem;
+          font-weight:600;
+          color:#E5E7EB;
+          margin-bottom:10px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
+    # ----- Load data + weights -----
+    try:
+        df = load_main_dataset()
+        metadata = load_metadata()
+    except FileNotFoundError:
+        st.error("Thiếu AHP_Data_synced_fixed.xlsx hoặc metadata.json.")
+        st.stop()
+    except Exception as e:
+        st.error(f"Lỗi đọc file dữ liệu: {e}")
+        st.stop()
 
+    all_weights = _load_all_weights_for_options()
+    last_topsis_df = st.session_state.get("last_topsis_df")
+    last_topsis_model = st.session_state.get("last_topsis_model")
 
-    _remember_page_state("Dashboard", ['page_navigator'])
+    # ----- KPI -----
+    if "Tỉnh/Thành phố" in df.columns:
+        id_col = "Tỉnh/Thành phố"
+        total_candidates = int(df[id_col].nunique())
+    elif "province_id" in df.columns:
+        id_col = "province_id"
+        total_candidates = int(df[id_col].nunique())
+    else:
+        id_col = df.columns[0]
+        total_candidates = len(df)
+
+    non_crit_cols = (id_col, "Vùng", "province_id", "region_id")
+    criteria_cols = [c for c in df.columns if c not in non_crit_cols]
+    total_criteria = len(criteria_cols)
+    scenario_count = len(all_weights)
+
+    top_label = "Chưa có"
+    if isinstance(last_topsis_df, pd.DataFrame) and not last_topsis_df.empty:
+        df_ranked = last_topsis_df.copy()
+        if "Rank" in df_ranked.columns:
+            df_ranked = df_ranked.sort_values("Rank")
+        name_cols = [c for c in df_ranked.columns if "Tỉnh" in str(c) or "Tên" in str(c)]
+        if name_cols:
+            top_label = str(df_ranked.iloc[0][name_cols[0]])
+        else:
+            top_label = str(df_ranked.iloc[0, 0])
+
+    st.markdown(
+        f"""
+        <div class="kpi-row">
+          <div class="kpi-card">
+            <div class="kpi-title">Ứng viên (Tỉnh/Thành)</div>
+            <div class="kpi-value">{total_candidates}</div>
+            <div class="kpi-sub">Từ AHP_Data_synced_fixed.xlsx</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Số tiêu chí</div>
+            <div class="kpi-value">{total_criteria}</div>
+            <div class="kpi-sub">Theo metadata + dữ liệu</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Mô hình AHP</div>
+            <div class="kpi-value">{scenario_count}</div>
+            <div class="kpi-sub">Số scenario trong weights.yaml</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Ứng viên xếp hạng #1</div>
+            <div class="kpi-value">{top_label}</div>
+            <div class="kpi-sub">{('Mô hình: ' + last_topsis_model) if last_topsis_model else 'Chưa chạy TOPSIS'}</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # ----- Vùng giữa: biểu đồ tiêu chí + pie AHP -----
+    colL, colR = st.columns([2.2, 1.8])
+
+    # Trái: line chart một tiêu chí theo tỉnh/thành
+    with colL:
+        st.markdown('<div class="section-box">', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="section-title">Phân phối một tiêu chí theo Tỉnh/Thành</div>',
+            unsafe_allow_html=True,
+        )
+
+        crit_map = criteria_display_map(criteria_cols, metadata)
+        default_key = criteria_cols[0] if criteria_cols else None
+        idx_default = criteria_cols.index(default_key) if default_key in criteria_cols else 0
+
+        selected_criterion = st.selectbox(
+            "Tiêu chí",
+            options=criteria_cols,
+            index=idx_default,
+            format_func=lambda c: crit_map.get(c, nice_name(c)),
+            key="dash_metric_criterion",
+        )
+
+        label = crit_map.get(selected_criterion, nice_name(selected_criterion))
+        id_label_col = "Tỉnh/Thành phố" if "Tỉnh/Thành phố" in df.columns else id_col
+
+        chart_df = (
+            df[[id_label_col, selected_criterion]]
+            .rename(columns={id_label_col: "Tên Tỉnh/Thành", selected_criterion: label})
+            .dropna()
+        )
+
+        if not chart_df.empty:
+            chart = (
+                alt.Chart(chart_df)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X("Tên Tỉnh/Thành:N", axis=alt.Axis(labelAngle=-40)),
+                    y=alt.Y(f"{label}:Q", title=label),
+                    tooltip=["Tên Tỉnh/Thành", label],
+                )
+                .interactive()
+            )
+            st.altair_chart(chart, use_container_width=True)
+        else:
+            st.caption("Không có dữ liệu cho tiêu chí này.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Phải: pie chart trọng số AHP của mô hình hiện tại/gần nhất
+    with colR:
+        st.markdown('<div class="section-box">', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="section-title">Phân bổ trọng số mô hình AHP</div>',
+            unsafe_allow_html=True,
+        )
+
+        # Ưu tiên model đang dùng gần nhất
+        model_for_weight = (
+            st.session_state.get("last_saved_model")
+            or st.session_state.get("scenario_selectbox")
+            or st.session_state.get("topsis_model_selector")
+            or st.session_state.get("whatif_model_selector")
+        )
+        if not model_for_weight and all_weights:
+            model_for_weight = sorted(all_weights.keys(), key=str.casefold)[0]
+
+        if model_for_weight and model_for_weight in all_weights:
+            w = all_weights.get(model_for_weight, {}) or {}
+            if w:
+                w_items = [(nice_name(k), float(v)) for k, v in w.items()]
+                wdf = pd.DataFrame(w_items, columns=["Tiêu chí", "Trọng số"])
+                s = float(wdf["Trọng số"].sum()) or 1.0
+                wdf["Trọng số (%)"] = wdf["Trọng số"] / s * 100.0
+                wdf["_label"] = wdf["Trọng số (%)"].round(1).astype(str) + "%"
+
+                base = alt.Chart(wdf).encode(
+                    theta=alt.Theta("Trọng số (%):Q", stack=True),
+                    color=alt.Color("Tiêu chí:N", sort=wdf["Tiêu chí"].tolist()),
+                )
+                pie = base.mark_arc(outerRadius=105, innerRadius=55)
+                text = (
+                    base.transform_filter(alt.datum["Trọng số (%)"] >= 3)
+                    .mark_text(radius=130)
+                    .encode(text=alt.Text("_label:N"))
+                )
+                st.altair_chart(pie + text, use_container_width=True)
+                st.caption(f"Mô hình: {model_for_weight}")
+            else:
+                st.caption("Mô hình AHP này chưa có trọng số.")
+        else:
+            st.caption("Chưa có mô hình AHP trong weights.yaml.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    # ----- Dưới: top 10 theo TOPSIS gần nhất -----
+    st.markdown('<div class="section-box">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">Top 10 xếp hạng theo TOPSIS gần nhất</div>',
+        unsafe_allow_html=True,
+    )
+
+    if isinstance(last_topsis_df, pd.DataFrame) and not last_topsis_df.empty:
+        df_rank = last_topsis_df.copy()
+        if "Rank" in df_rank.columns:
+            df_rank = df_rank.sort_values("Rank")
+        top10 = add_index_col(df_rank.head(10).copy(), "STT")
+        # cố gắng lấy cột tên + rank
+        name_cols = [c for c in top10.columns if "Tỉnh" in str(c) or "Tên" in str(c)]
+        show_cols = ["STT"]
+        if name_cols:
+            show_cols.append(name_cols[0])
+        if "Rank" in top10.columns:
+            show_cols.append("Rank")
+        show_cols = [c for c in show_cols if c in top10.columns]
+        display_table(top10[show_cols], bold_first_col=True, fixed_height=320, zoomable=False)
+        if last_topsis_model:
+            st.caption(f"Mô hình: {last_topsis_model}")
+    else:
+        st.caption("Chưa chạy TOPSIS nên không có bảng xếp hạng.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    _remember_page_state("Dashboard", ['page_navigator', 'dash_'])
+
 # =========================
 # Page: Data Overview
 # =========================
