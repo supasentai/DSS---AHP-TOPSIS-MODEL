@@ -14,7 +14,7 @@
 ---
 
 ## Vấn đề
-Việc lựa chọn một địa điểm kinh doanh mới là một bài toán phức tạp, mang tính bán cấu trúc (semi-structured) và đa tiêu chí (MCDM). Người ra quyết định phải cân nhắc nhiều yếu tố mâu thuẫn nhau (ví dụ: giá thuê rẻ so với mật độ dân cư cao). Hệ thống này được xây dựng để giải quyết bài toán này bằng cách định lượng hóa các tiêu chí và xếp hạng các phương án (các phường) một cách khoa học.
+Việc lựa chọn một địa điểm kinh doanh mới là một bài toán phức tạp, mang tính bán cấu trúc (semi-structured) và đa tiêu chí (MCDM). Người ra quyết định phải cân nhắc nhiều yếu tố mâu thuẫn nhau (ví dụ: giá thuê rẻ so với mật độ dân cư cao). Hệ thống này được xây dựng để giải quyết bài toán này bằng cách định lượng hóa các tiêu chí và xếp hạng các phương án (các tỉnh/thành phố) một cách khoa học.
 
 ## Phương pháp luận
 Hệ thống kết hợp hai phương pháp MCDM phổ biến:
