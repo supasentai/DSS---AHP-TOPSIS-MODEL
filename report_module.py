@@ -14,13 +14,52 @@ from fpdf import FPDF
 import matplotlib
 matplotlib.use('Agg')
 MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# =========================
+# Vietnamese name normalization (for joining Excel <-> GeoJSON)
+# =========================
+_VIET_BASE = {
+    "à": "a","á": "a","ả": "a","ã": "a","ạ": "a",
+    "ă": "a","ằ": "a","ắ": "a","ẳ": "a","ẵ": "a","ặ": "a",
+    "â": "a","ầ": "a","ấ": "a","ẩ": "a","ẫ": "a","ậ": "a",
+    "è": "e","é": "e","ẻ": "e","ẽ": "e","ẹ": "e",
+    "ê": "e","ề": "e","ế": "e","ể": "e","ễ": "e","ệ": "e",
+    "ì": "i","í": "i","ỉ": "i","ĩ": "i","ị": "i",
+    "ò": "o","ó": "o","ỏ": "o","õ": "o","ọ": "o",
+    "ô": "o","ồ": "o","ố": "o","ổ": "o","ỗ": "o","ộ": "o",
+    "ơ": "o","ờ": "o","ớ": "o","ở": "o","ỡ": "o","ợ": "o",
+    "ù": "u","ú": "u","ủ": "u","ũ": "u","ụ": "u",
+    "ư": "u","ừ": "u","ứ": "u","ử": "u","ữ": "u","ự": "u",
+    "ỳ": "y","ý": "y","ỷ": "y","ỹ": "y","ỵ": "y",
+    "đ": "d",
+}
+_char_map = {}
+for ch, rep in _VIET_BASE.items():
+    _char_map[ch] = rep
+    _char_map[ch.upper()] = rep.upper()
+_VIET_TRANS = str.maketrans(_char_map)
+
+def norm_province_name(s: str) -> str:
+    """Chuẩn hóa tên tỉnh/thành để join giữa Excel và GeoJSON."""
+    import re as _re
+    s = str(s).strip().lower()
+    for w in ("tinh", "tỉnh", "thanh pho", "thành phố", "tp.", "tp ", "tp"):
+        s = s.replace(w, "")
+    s = s.translate(_VIET_TRANS)
+    s = _re.sub(r"[^a-z0-9]+", "", s)
+    special = {
+        "brvt": "bariavungtau",
+        "hochiminhcity": "hochiminh",
+        "tphochiminh": "hochiminh",
+    }
+    return special.get(s, s)
 # =========================
 # Paths
 # =========================
 WEIGHTS_PATH = "data/weights.yaml"
 METADATA_PATH = "data/metadata.json"
 DATA_PATH = "data/AHP_Data_synced_fixed.xlsx"
-GEOJSON_PATH = "data/quan7_geojson.json"
+GEOJSON_PATH = "data/VietNam_provinces.json"
 RANKING_DIR = "data"
 REPORT_OUTPUT_DIR = "reports"
 TEMP_ASSET_DIR = os.path.join(MODULE_DIR, REPORT_OUTPUT_DIR, 'temp_assets')
@@ -154,12 +193,49 @@ class PDF(FPDF):
 def _nice_name(col: str) -> str:
     return str(col).replace("_", " ").strip().title()
 
+
 def _load_all_data(model_name: str, all_weights: Dict) -> Optional[Tuple[Dict, pd.DataFrame, pd.DataFrame, Dict]]:
+    """Tải trọng số, bảng xếp hạng, dữ liệu gốc (đã join tên tỉnh + vùng) và metadata."""
     try:
         weights_dict = all_weights.get(model_name)
         if not weights_dict:
             print(f"Không tìm thấy mô hình '{model_name}'")
             return None
+
+        ranking_file = os.path.join(RANKING_DIR, f"ranking_result_{model_name}.xlsx")
+        ranking_df = pd.read_excel(ranking_file)
+
+        # Đọc file dữ liệu chính giống app.load_main_dataset
+        xls_path = DATA_PATH
+        df_main = pd.read_excel(xls_path, sheet_name="Sheet1")
+        df = df_main.copy()
+
+        # Join tên tỉnh/thành từ sheet "Tổng hợp" (nếu có)
+        try:
+            df_info = pd.read_excel(xls_path, sheet_name="Tổng hợp")
+            if "province_id" in df_info.columns and "Tỉnh/Thành phố" in df_info.columns:
+                df_info = df_info[["province_id", "Tỉnh/Thành phố"]].drop_duplicates(subset=["province_id"])
+                df = df.merge(df_info, on="province_id", how="left")
+        except Exception:
+            pass
+
+        # Join vùng từ sheet "Vùng" (nếu có)
+        try:
+            df_region = pd.read_excel(xls_path, sheet_name="Vùng")
+            if "province_id" in df_region.columns and "region" in df_region.columns:
+                df_region = df_region[["province_id", "region"]].drop_duplicates(subset=["province_id"])
+                df = df.merge(df_region, on="province_id", how="left")
+                df = df.rename(columns={"region": "Vùng"})
+        except Exception:
+            pass
+
+        with open(METADATA_PATH, "r", encoding="utf-8-sig") as f:
+            metadata = json.load(f)
+
+        return weights_dict, ranking_df, df, metadata
+    except Exception as e:
+        print(f"Lỗi tải dữ liệu: {e}")
+        return None
 
         ranking_file = os.path.join(RANKING_DIR, f"ranking_result_{model_name}.xlsx")
         ranking_df = pd.read_excel(ranking_file)
@@ -176,11 +252,18 @@ def _load_all_data(model_name: str, all_weights: Dict) -> Optional[Tuple[Dict, p
 # =========================
 # Charts
 # =========================
-def _generate_weights_pie_chart(weights_dict: Dict, output_path: str) -> Optional[str]:
+def _generate_weights_pie_chart(weights_dict: Dict, metadata: Dict, output_path: str) -> Optional[str]:
     try:
         sorted_items = sorted(weights_dict.items(), key=lambda kv: kv[1], reverse=True)
-        labels = [_nice_name(k) for k, _ in sorted_items]
-        sizes = [float(v) for _, v in sorted_items]
+        labels = []
+        sizes = []
+        for k, v in sorted_items:
+            if float(v) <= 0:
+                continue
+            info = metadata.get(k, {}) if isinstance(metadata, dict) else {}
+            lbl = info.get('display_name') or info.get('name') or _nice_name(k)
+            labels.append(lbl)
+            sizes.append(float(v))
         sizes = [s for s in sizes if s > 0]
         labels = [l for l, s in zip(labels, [float(v) for _, v in sorted_items]) if s > 0]
         if not sizes:
@@ -208,55 +291,70 @@ def _generate_weights_pie_chart(weights_dict: Dict, output_path: str) -> Optiona
         print(f"Lỗi vẽ pie: {e}")
         return None
 
+
 def _generate_radar_chart(ranking_df: pd.DataFrame,
                           raw_data_df: pd.DataFrame,
                           metadata: Dict,
-                          output_path: str) -> Optional[str]:
+                          output_path: str,
+                          weights_dict: Optional[Dict] = None) -> Optional[str]:
+    """Vẽ radar cho Top 3 tỉnh theo 4 tiêu chí có trọng số cao nhất."""
     try:
-        keys = ["population_density", "rental_cost", "competition_pressure", "amenity_score"]
-        types = {k: v.get("type") for k, v in metadata.items()}
+        if weights_dict is None:
+            return None
 
-        # labels
+        # Chọn tối đa 4 tiêu chí có trọng số cao nhất và có mặt trong dữ liệu
+        items = sorted(weights_dict.items(), key=lambda kv: kv[1], reverse=True)
+        keys = [k for k, v in items if k in raw_data_df.columns][:4]
+        if len(keys) < 2:
+            return None
+
+        types = {k: (metadata.get(k, {}) or {}).get("type") for k in keys}
+
+        # Nhãn trục radar
         radar_labels = []
         for k in keys:
-            if k in raw_data_df.columns:
-                tag = "(Lợi ích)" if types.get(k) == "benefit" else "(Chi phí)"
-                radar_labels.append(f"{_nice_name(k)}\n{tag}")
+            info = metadata.get(k, {}) if isinstance(metadata, dict) else {}
+            base = info.get("display_name") or info.get("name") or _nice_name(k)
+            tag = "(Lợi ích)" if types.get(k) == "benefit" else "(Chi phí)"
+            radar_labels.append(f"{base}\n{tag}")
 
-        # normalize 0..1; cost → invert
+        # Chuẩn hóa về [0,1]; cost -> đảo chiều
         norm_df = raw_data_df.copy()
         for c in keys:
-            if c not in norm_df.columns:
-                continue
             mn, mx = norm_df[c].min(), norm_df[c].max()
             rng = (mx - mn) or 1.0
             norm_df[c] = (norm_df[c] - mn) / rng
             if types.get(c) == "cost":
                 norm_df[c] = 1.0 - norm_df[c]
 
-        top_names = ranking_df.sort_values("Rank")["Tên phường"].tolist()[:3]
-        colors = [PALETTE["orange"], PALETTE["green"], PALETTE["teal"]]
+        if "Tên Tỉnh/Thành" in ranking_df.columns:
+            top_names = ranking_df.sort_values("Rank")["Tên Tỉnh/Thành"].astype(str).tolist()[:3]
+            name_col = "Tỉnh/Thành phố"
+        elif "Tên phường" in ranking_df.columns:
+            top_names = ranking_df.sort_values("Rank")["Tên phường"].astype(str).tolist()[:3]
+            name_col = "ward"
+        else:
+            return None
 
+        colors = [PALETTE["orange"], PALETTE["green"], PALETTE["teal"]]
         angles = np.linspace(0, 2 * np.pi, len(radar_labels), endpoint=False).tolist()
         angles += angles[:1]
 
         fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
         for i, name in enumerate(top_names):
-            row = norm_df[norm_df["ward"] == name]
+            row = norm_df[norm_df[name_col].astype(str) == name]
             if row.empty:
                 continue
-            vals = [row.iloc[0].get(k, 0.0) for k in keys if k in norm_df.columns]
-            if not vals:
-                continue
+            vals = [row.iloc[0].get(k, 0.0) for k in keys]
             vals += vals[:1]
-            ax.plot(angles, vals, color=colors[i], linewidth=2, label=name)
-            ax.fill(angles, vals, color=colors[i], alpha=0.2)
+            ax.plot(angles, vals, color=colors[i % len(colors)], linewidth=2, label=name)
+            ax.fill(angles, vals, color=colors[i % len(colors)], alpha=0.2)
 
         ax.set_yticklabels([])
         ax.set_xticks(angles[:-1])
         ax.set_xticklabels(radar_labels)
         ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1))
-        ax.set_title("Hồ sơ Top 3 Phường", size=16, weight="bold", y=1.1)
+        ax.set_title("Hồ sơ Top 3 Địa điểm theo Tiêu chí chính", size=16, weight="bold", y=1.1)
 
         plt.savefig(output_path, bbox_inches="tight", dpi=150)
         plt.close(fig)
@@ -266,25 +364,62 @@ def _generate_radar_chart(ranking_df: pd.DataFrame,
         plt.close("all")
         return None
 
-def _generate_bar_charts(raw_data_df: pd.DataFrame, output_prefix: str) -> Dict[str, str]:
+
+def _generate_bar_charts(raw_data_df: pd.DataFrame,
+                         ranking_df: pd.DataFrame,
+                         metadata: Dict,
+                         weights_dict: Dict,
+                         output_prefix: str) -> Dict[str, str]:
+    """Vẽ bar chart cho 3 tiêu chí quan trọng nhất, chỉ hiển thị Top 5 địa điểm để tránh rối chữ."""
     try:
-        crits = {
-            "population_density": PALETTE["teal"],
-            "rental_cost": PALETTE["orange"],
-            "competition_pressure": PALETTE["red"],
-        }
-        wards = raw_data_df["ward"].astype(str).tolist()
+        # Chọn 3 tiêu chí có trọng số cao nhất và có trong dữ liệu
+        items = sorted(weights_dict.items(), key=lambda kv: kv[1], reverse=True)
+        keys = [k for k, v in items if k in raw_data_df.columns][:3]
+        if not keys:
+            return {}
+
+        df = raw_data_df.copy()
+
+        # Lọc Top 5 theo Rank nếu có bảng xếp hạng
+        labels_col = None
+        top_names = None
+        if "Tỉnh/Thành phố" in df.columns and "Tên Tỉnh/Thành" in ranking_df.columns:
+            labels_col = "Tỉnh/Thành phố"
+            top_names = ranking_df.sort_values("Rank")["Tên Tỉnh/Thành"].astype(str).unique().tolist()[:5]
+        elif "ward" in df.columns and "Tên phường" in ranking_df.columns:
+            labels_col = "ward"
+            top_names = ranking_df.sort_values("Rank")["Tên phường"].astype(str).unique().tolist()[:5]
+
+        if labels_col and top_names:
+            df = df[df[labels_col].astype(str).isin(top_names)].reset_index(drop=True)
+
+        if labels_col is None:
+            if "Tỉnh/Thành phố" in df.columns:
+                labels_col = "Tỉnh/Thành phố"
+            elif "ward" in df.columns:
+                labels_col = "ward"
+
+        if labels_col:
+            labels = df[labels_col].astype(str).tolist()
+        else:
+            labels = [str(i) for i in range(len(df))]
+
         paths: Dict[str, str] = {}
 
-        for key, color in crits.items():
-            if key not in raw_data_df.columns:
+        color_seq = [PALETTE["teal"], PALETTE["orange"], PALETTE["red"], PALETTE["blue"]]
+
+        for idx, key in enumerate(keys):
+            if key not in df.columns:
                 continue
-            vals = raw_data_df[key].tolist()
+            vals = df[key].tolist()
             out = f"{output_prefix}_{key}.png"
 
-            fig, ax = plt.subplots(figsize=(10, 6))
-            ax.bar(wards, vals, color=color)
-            ax.set_title(f"Phân tích Tiêu chí: {_nice_name(key)}", size=16, weight="bold")
+            info = metadata.get(key, {}) if isinstance(metadata, dict) else {}
+            title = info.get("display_name") or info.get("name") or _nice_name(key)
+
+            fig, ax = plt.subplots(figsize=(8, 5))
+            ax.bar(labels, vals, color=color_seq[idx % len(color_seq)])
+            ax.set_title(f"Phân tích Tiêu chí: {title} (Top 5 địa điểm)", size=14, weight="bold")
             ax.set_ylabel("Giá trị gốc")
             plt.xticks(rotation=45, ha="right")
             plt.tight_layout()
@@ -297,16 +432,38 @@ def _generate_bar_charts(raw_data_df: pd.DataFrame, output_prefix: str) -> Dict[
         print(f"Lỗi vẽ bar: {e}")
         return {}
 
-def _generate_ranking_map(ranking_df: pd.DataFrame, geojson_path: str, output_path: str, hue: str = "blue") -> Optional[str]:
+
+def _generate_ranking_map(ranking_df: pd.DataFrame,
+                          geojson_path: str,
+                          output_path: str,
+                          hue: str = "blue") -> Optional[str]:
+    """Vẽ bản đồ Việt Nam tô màu theo Điểm TOPSIS (0-1)."""
     try:
         gdf = geopandas.read_file(geojson_path)
-        gdf["join_key"] = gdf["name"].astype(str).str.replace(" ", "")
+
+        # Xác định cột tên tỉnh trong GeoJSON
+        name_col = "NAME_1" if "NAME_1" in gdf.columns else ("name" if "name" in gdf.columns else None)
+        if name_col is None:
+            print("GeoJSON không có cột NAME_1/name")
+            return None
+
+        gdf["join_key"] = gdf[name_col].astype(str).map(norm_province_name)
+
         tmp = ranking_df.copy()
-        tmp["join_key"] = tmp["Tên phường"].astype(str).str.replace(" ", "")
+        if "Tên Tỉnh/Thành" in tmp.columns:
+            tmp["join_key"] = tmp["Tên Tỉnh/Thành"].astype(str).map(norm_province_name)
+        elif "Tên phường" in tmp.columns:
+            tmp["join_key"] = tmp["Tên phường"].astype(str).map(norm_province_name)
+        else:
+            print("ranking_df không có cột tên để join")
+            return None
+
         merged = gdf.merge(tmp, on="join_key", how="left")
+        if "Điểm TOPSIS (0-1)" not in merged.columns:
+            print("Không tìm thấy cột 'Điểm TOPSIS (0-1)' trong ranking_df/merged")
+            return None
         merged["Điểm TOPSIS (0-1)"] = merged["Điểm TOPSIS (0-1)"].fillna(0.0)
 
-        # NEW: đồng bộ colormap theo hue
         cmap = {"red": "Reds", "green": "Greens", "blue": "Blues"}.get(str(hue).lower(), "Blues")
 
         fig, ax = plt.subplots(1, 1, figsize=(10, 10))
@@ -320,10 +477,19 @@ def _generate_ranking_map(ranking_df: pd.DataFrame, geojson_path: str, output_pa
             missing_kwds={"color": "lightgrey", "label": "Không có dữ liệu"},
             legend_kwds={"label": "Điểm TOPSIS (0–1)", "orientation": "horizontal"},
         )
-        for x, y, label in zip(merged.geometry.centroid.x, merged.geometry.centroid.y, merged["name"]):
-            ax.text(x, y, label, fontsize=8, ha="center", color="black")
 
-        ax.set_title("Bản đồ Xếp hạng TOPSIS Quận 7", size=18, weight="bold")
+        # Vẽ tên cho Top 5 tỉnh để tránh overlap
+        if "Rank" in merged.columns:
+            top = merged.sort_values("Rank").head(5)
+            for _, row in top.iterrows():
+                geom = row["geometry"]
+                if geom is None:
+                    continue
+                x, y = geom.centroid.x, geom.centroid.y
+                label = str(row[name_col])
+                ax.text(x, y, label, fontsize=8, ha="center", color="black")
+
+        ax.set_title("Bản đồ Xếp hạng TOPSIS Việt Nam", size=18, weight="bold")
         ax.axis("off")
         plt.savefig(output_path, bbox_inches="tight", dpi=150)
         plt.close(fig)
@@ -335,15 +501,9 @@ def _generate_ranking_map(ranking_df: pd.DataFrame, geojson_path: str, output_pa
 # =========================
 # Main API
 # =========================
+
 def create_full_report(model_name: str, all_weights: Dict, hue: str = "blue") -> Optional[str]:
-    """
-    Tạo báo cáo PDF gồm:
-      - Pie trọng số AHP
-      - Bảng xếp hạng TOPSIS
-      - Radar Top 3
-      - Bar theo tiêu chí
-      - Bản đồ tĩnh
-    """
+    """Tạo báo cáo PDF đầy đủ cho một mô hình TOPSIS/AHP."""
     os.makedirs(REPORT_OUTPUT_DIR, exist_ok=True)
     os.makedirs(TEMP_ASSET_DIR, exist_ok=True)
 
@@ -356,16 +516,16 @@ def create_full_report(model_name: str, all_weights: Dict, hue: str = "blue") ->
     def _tmp(name: str) -> str:
         return os.path.join(TEMP_ASSET_DIR, f"{safe}_{name}.png")
 
-    pie_path = _generate_weights_pie_chart(weights_dict, _tmp("weights_pie"))
-    radar_path = _generate_radar_chart(ranking_df, raw_data_df, metadata, _tmp("radar_top3"))
+    pie_path = _generate_weights_pie_chart(weights_dict, metadata, _tmp("weights_pie"))
+    radar_path = _generate_radar_chart(ranking_df, raw_data_df, metadata, _tmp("radar_top3"), weights_dict=weights_dict)
     map_path   = _generate_ranking_map(ranking_df, GEOJSON_PATH, _tmp("ranking_map"), hue=hue)
-    bar_paths  = _generate_bar_charts(raw_data_df, os.path.join(TEMP_ASSET_DIR, f"{safe}_bar"))
+    bar_paths  = _generate_bar_charts(raw_data_df, ranking_df, metadata, weights_dict, os.path.join(TEMP_ASSET_DIR, f"{safe}_bar"))
 
     pdf = PDF("P", "mm", "A4")
     pdf.set_model_name(model_name)
     pdf.alias_nb_pages()
 
-    # Cover
+    # Trang bìa
     pdf.add_page()
     pdf.set_font(pdf.active_font, "B", 24)
     pdf.cell(0, 45, "", 0, 1)
@@ -375,10 +535,11 @@ def create_full_report(model_name: str, all_weights: Dict, hue: str = "blue") ->
     pdf.set_font(pdf.active_font, "", 14)
     pdf.cell(0, 10, f"Ngày tạo: {datetime.date.today().isoformat()}", 0, 1, "C")
 
-    # Page 2: weights
+    page_w = pdf.w - 2 * pdf.l_margin
+
+    # 1. Trọng số AHP
     pdf.add_page()
     pdf.section_title("1. Phân bổ Trọng số (AHP)")
-    page_w = pdf.w - 2 * pdf.l_margin
     if pie_path and os.path.exists(pie_path):
         pdf.image(pie_path, x=pdf.l_margin, y=None, w=page_w * 0.9)
         pdf.ln(4)
@@ -386,46 +547,58 @@ def create_full_report(model_name: str, all_weights: Dict, hue: str = "blue") ->
     pdf.set_font(pdf.active_font, "B", 12)
     pdf.cell(0, 10, "Bảng Trọng số chi tiết:", 0, 1, "L")
     wdf = pd.DataFrame(weights_dict.items(), columns=["Tiêu chí (gốc)", "Trọng số"])
-    wdf["Tiêu chí"] = wdf["Tiêu chí (gốc)"].apply(_nice_name)
+    def _disp_name(k: str) -> str:
+        info = metadata.get(k, {}) if isinstance(metadata, dict) else {}
+        return info.get("display_name") or info.get("name") or _nice_name(k)
+    wdf["Tiêu chí"] = wdf["Tiêu chí (gốc)"].apply(_disp_name)
     wdf = wdf[["Tiêu chí", "Trọng số"]].sort_values("Trọng số", ascending=False)
     pdf.add_df_to_table(wdf, col_widths=[page_w * 0.7, page_w * 0.3])
 
-    # Page 3: ranking
+    # 2. Bảng xếp hạng TOPSIS
     pdf.add_page()
     pdf.section_title("2. Kết quả Xếp hạng (TOPSIS)")
-    keep = [c for c in ["Rank", "Tên phường", "Điểm TOPSIS (0-1)"] if c in ranking_df.columns]
-    tbl = ranking_df.sort_values("Rank")[keep]
-    pdf.add_df_to_table(tbl, col_widths=[page_w * 0.15, page_w * 0.55, page_w * 0.3], highlight_top=True)
+    rank_cols = ["Rank", "Tên Tỉnh/Thành", "Tên phường", "Điểm TOPSIS (0-1)"]
+    keep = [c for c in rank_cols if c in ranking_df.columns]
+    if "Rank" in ranking_df.columns:
+        tbl = ranking_df.sort_values("Rank")[keep]
+    else:
+        tbl = ranking_df[keep]
+    pdf.add_df_to_table(tbl, col_widths=[page_w * 0.15] + [page_w * 0.55] + [page_w * 0.3] if len(keep) == 3 else None, highlight_top=True)
 
-    # Page 4: radar
+    # 3. Radar
     pdf.add_page()
-    pdf.section_title("3. Hồ sơ Top 3 Phường (Biểu đồ Radar)")
+    pdf.section_title("3. Hồ sơ Top 3 Địa điểm (Biểu đồ Radar)")
     if radar_path and os.path.exists(radar_path):
         pdf.image(radar_path, x=pdf.l_margin, y=None, w=page_w)
     else:
-        pdf.cell(0, 10, "(Không thể tạo biểu đồ radar)", 0, 1, "L")
+        pdf.cell(0, 10, "(Không thể tạo biểu đồ radar – kiểm tra dữ liệu và metadata)", 0, 1, "L")
 
-    # Page 5–6: bars
+    # 4. Bar charts
     pdf.add_page()
     pdf.section_title("4. Phân tích Tiêu chí Chi tiết (Giá trị gốc)")
-    for key in ["population_density", "rental_cost", "competition_pressure"]:
-        path = bar_paths.get(key)
-        if path and os.path.exists(path):
-            pdf.image(path, x=pdf.l_margin, y=None, w=page_w)
-            pdf.ln(4)
-            # tách trang cho đồ thị tiếp theo nếu còn
-            if key != "competition_pressure":
+    if bar_paths:
+        first = True
+        for key, path_img in bar_paths.items():
+            if not os.path.exists(path_img):
+                continue
+            if not first:
                 pdf.add_page()
+                pdf.section_title("4. Phân tích Tiêu chí Chi tiết (Giá trị gốc)")
+            pdf.image(path_img, x=pdf.l_margin, y=None, w=page_w)
+            pdf.ln(4)
+            first = False
+    else:
+        pdf.cell(0, 10, "(Không thể tạo biểu đồ cột – kiểm tra dữ liệu và trọng số)", 0, 1, "L")
 
-    # Page 7: map
+    # 5. Bản đồ
     pdf.add_page()
     pdf.section_title("5. Trực quan Bản đồ Xếp hạng")
     if map_path and os.path.exists(map_path):
         pdf.image(map_path, x=pdf.l_margin, y=None, w=page_w)
     else:
-        pdf.cell(0, 10, "(Không thể tạo bản đồ)", 0, 1, "L")
+        pdf.cell(0, 10, "(Không thể tạo bản đồ – kiểm tra GeoJSON và ranking_result)", 0, 1, "L")
 
-    # Save + cleanup
+    # Lưu + dọn tạm
     os.makedirs(REPORT_OUTPUT_DIR, exist_ok=True)
     out_name = f"Bao_cao_PDF_{safe}_{datetime.date.today().isoformat()}.pdf"
     out_path = os.path.join(REPORT_OUTPUT_DIR, out_name)
