@@ -333,9 +333,11 @@ def _scenario_options():
 def _direct_rating_2col(features: list[str], defaults: dict[str, int], key_prefix: str) -> dict[str, int]:
     cols = st.columns(2)
     scores: dict[str, int] = {}
+    meta = load_metadata()
     for i, f in enumerate(features):
         with cols[i % 2]:
-            scores[f] = _block10_editor(label=nice_name(f), default=int(defaults.get(f, 5)), key=f"{key_prefix}_{f}")
+            label = criterion_label(f, meta)
+            scores[f] = _block10_editor(label=label, default=int(defaults.get(f, 5)), key=f"{key_prefix}_{f}")
     return scores
 
 def load_metadata():
@@ -854,9 +856,16 @@ if page == "Dashboard":
         )
 
         if not chart_df.empty:
+            # Top 5 Tỉnh/Thành theo tiêu chí; benefit: lấy lớn nhất, cost: lấy nhỏ nhất
+            meta_info = _meta_info_for_key(selected_criterion, metadata)
+            c_type = str(meta_info.get("type", "benefit")).lower()
+            ascending = (c_type == "cost")
+
+            chart_source = chart_df.sort_values(label, ascending=ascending).head(5)
+
             chart = (
-                alt.Chart(chart_df)
-                .mark_line(point=True)
+                alt.Chart(chart_source)
+                .mark_bar()
                 .encode(
                     x=alt.X("Tên Tỉnh/Thành:N", axis=alt.Axis(labelAngle=-40)),
                     y=alt.Y(f"{label}:Q", title=label),
@@ -890,7 +899,7 @@ if page == "Dashboard":
         if model_for_weight and model_for_weight in all_weights:
             w = all_weights.get(model_for_weight, {}) or {}
             if w:
-                w_items = [(nice_name(k), float(v)) for k, v in w.items()]
+                w_items = [(criterion_label(k, metadata), float(v)) for k, v in w.items()]
                 wdf = pd.DataFrame(w_items, columns=["Tiêu chí", "Trọng số"])
                 s = float(wdf["Trọng số"].sum()) or 1.0
                 wdf["Trọng số (%)"] = wdf["Trọng số"] / s * 100.0
@@ -912,6 +921,52 @@ if page == "Dashboard":
                 st.caption("Mô hình AHP này chưa có trọng số.")
         else:
             st.caption("Chưa có mô hình AHP trong weights.yaml.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+        # Thêm: pie chart TOPSIS (dựa trên kết quả gần nhất)
+        st.markdown('<div class="section-box">', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="section-title">Phân bổ điểm TOPSIS (Top 5)</div>',
+            unsafe_allow_html=True,
+        )
+        if isinstance(last_topsis_df, pd.DataFrame) and not last_topsis_df.empty:
+            df_rank = last_topsis_df.copy()
+            if "Rank" in df_rank.columns:
+                df_rank = df_rank.sort_values("Rank")
+            # Chọn cột tên ứng viên
+            name_cols = [c for c in df_rank.columns if "Tỉnh" in str(c) or "Tên" in str(c)]
+            name_col = name_cols[0] if name_cols else df_rank.columns[0]
+            score_col = "Điểm TOPSIS (0-1)" if "Điểm TOPSIS (0-1)" in df_rank.columns else None
+            if score_col is None:
+                # fallback: lấy cột số thực cuối cùng
+                num_cols = [c for c in df_rank.columns if pd.api.types.is_numeric_dtype(df_rank[c])]
+                score_col = num_cols[-1] if num_cols else None
+            if score_col is not None:
+                df_p = df_rank[[name_col, score_col]].head(5).rename(
+                    columns={name_col: "Ứng viên", score_col: "Score"}
+                )
+                total = float(df_p["Score"].sum()) or 1.0
+                df_p["Score_pct"] = df_p["Score"] / total * 100.0
+                df_p["_label"] = df_p["Score_pct"].round(1).astype(str) + "%"
+
+                base_t = alt.Chart(df_p).encode(
+                    theta=alt.Theta("Score_pct:Q", stack=True),
+                    color=alt.Color("Ứng viên:N", sort=df_p["Ứng viên"].tolist()),
+                )
+                pie_t = base_t.mark_arc(outerRadius=105, innerRadius=55)
+                text_t = (
+                    base_t.transform_filter(alt.datum.Score_pct >= 3)
+                    .mark_text(radius=130)
+                    .encode(text=alt.Text("_label:N"))
+                )
+                st.altair_chart(pie_t + text_t, use_container_width=True)
+                if last_topsis_model:
+                    st.caption(f"Mô hình: {last_topsis_model}")
+            else:
+                st.caption("Không tìm thấy cột điểm TOPSIS để vẽ biểu đồ.")
+        else:
+            st.caption("Chưa có kết quả TOPSIS để vẽ biểu đồ.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     # ----- Dưới: top 10 theo TOPSIS gần nhất -----
@@ -1102,6 +1157,7 @@ elif page == "Tổng quan Dữ liệu":
 # Page: AHP Customize
 # =========================
 elif page == "Tùy chỉnh Trọng số (AHP)":
+    metadata = load_metadata()
     st.header("Trang 3: Tạo và Cập nhật Trọng số Mô hình")
 
     _SAATY_LABELS = ["1/9","1/8","1/7","1/6","1/5","1/4","1/3","1/2","1","2","3","4","5","6","7","8","9"]
@@ -1129,21 +1185,23 @@ elif page == "Tùy chỉnh Trọng số (AHP)":
         n = len(criteria)
         key_df = f"{session_key}_df"
         store_key = f"{session_key}_store"
+        meta = load_metadata()
+        labels = [criterion_label(c, meta) for c in criteria]
         if store_key in st.session_state:
             df = st.session_state[store_key].copy()
             if not isinstance(df, _pd.DataFrame) or df.shape != (n, n):
                 df = _pd.DataFrame(
                     [["—" if i == j else ("" if i > j else "1") for j in range(n)] for i in range(n)],
-                    columns=[nice_name(c) for c in criteria],
-                    index=[nice_name(c) for c in criteria],
+                    columns=labels,
+                    index=labels,
                 )
         else:
             df = _pd.DataFrame(
                 [["—" if i == j else ("" if i > j else "1") for j in range(n)] for i in range(n)],
-                columns=[nice_name(c) for c in criteria],
-                index=[nice_name(c) for c in criteria],
+                columns=labels,
+                index=labels,
             )
-        col_cfg = {nice_name(c): st.column_config.SelectboxColumn(label=nice_name(c), options=_SAATY_LABELS, width="small") for c in criteria}
+        col_cfg = {lab: st.column_config.SelectboxColumn(label=lab, options=_SAATY_LABELS, width="small") for lab in labels}
         st.caption("Nhập trên tam giác trên. Ô '—' = 1. Tam giác dưới tự động nghịch đảo.")
         df_edit = st.data_editor(df, hide_index=False, use_container_width=True, num_rows="fixed", column_config=col_cfg, key=key_df)
         st.session_state[store_key] = df_edit.copy()
@@ -1365,7 +1423,7 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
                 scores = _direct_rating_2col(selected, {}, "new_block")
                 s = sum(scores.values()) or 1
                 weights_norm = {k: float(v)/s for k, v in scores.items()}
-                dfw = pd.DataFrame([(nice_name(k), scores[k], weights_norm[k]) for k in selected],
+                dfw = pd.DataFrame([(criterion_label(k, metadata), scores[k], weights_norm[k]) for k in selected],
                                    columns=["Tiêu chí","Điểm 1–10","Trọng số (chuẩn hoá)"])
                 st.dataframe(dfw, hide_index=True, use_container_width=True)
                 if st.button("Lưu + Chạy TOPSIS"):
@@ -1382,7 +1440,7 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
         st.subheader(f"Trọng số hiện tại: **{selected_scenario}**")
         current_weights = all_weights.get(selected_scenario, {})
         if current_weights:
-            dfw = pd.DataFrame([(nice_name(k), v) for k, v in current_weights.items()],
+            dfw = pd.DataFrame([(criterion_label(k, metadata), v) for k, v in current_weights.items()],
                                columns=["Tiêu chí","Trọng số"]).sort_values("Trọng số", ascending=False).reset_index(drop=True)
             st.dataframe(dfw, hide_index=True, use_container_width=True)
 
@@ -1405,7 +1463,7 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
                 if weights_vec is not None:
                     s = float(sum(weights_vec)) or 1.0
                     weights_norm = {k: float(v)/s for k, v in zip(features, weights_vec)}
-                    dfp = pd.DataFrame([(nice_name(k), weights_norm[k]) for k in features],
+                    dfp = pd.DataFrame([(criterion_label(k, metadata), weights_norm[k]) for k in features],
                                        columns=["Tiêu chí","Trọng số"]).sort_values("Trọng số", ascending=False).reset_index(drop=True)
                     st.dataframe(dfp, hide_index=True, use_container_width=True)
                 if st.button("Lưu thay đổi", key=f"save_pw_{selected_scenario}"):
@@ -1419,7 +1477,7 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
                 scores = _direct_rating_2col(features, init, f"cust_block_{selected_scenario}")
                 s = sum(scores.values()) or 1
                 new_w = {f: float(v)/s for f, v in scores.items()}
-                dfp = pd.DataFrame([(nice_name(k), scores[k], new_w[k]) for k in features],
+                dfp = pd.DataFrame([(criterion_label(k, metadata), scores[k], new_w[k]) for k in features],
                                    columns=["Tiêu chí","Điểm 1–10","Trọng số (chuẩn hoá)"])
                 st.dataframe(dfp, hide_index=True, use_container_width=True)
                 if st.button("Lưu thay đổi", key=f"save_num_{selected_scenario}"):
@@ -1433,6 +1491,7 @@ thead tr th div[data-testid="stMarkdownContainer"] p { white-space: nowrap; }
 # Page: TOPSIS
 # =========================
 elif page == "Phân tích Địa điểm (TOPSIS)":
+    metadata = load_metadata()
     st.header("Trang 4: Xếp hạng Địa điểm TOPSIS")
 
     try:
@@ -1472,7 +1531,7 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
         weights_dict = all_weights.get(model_name, {}) or {}
         if isinstance(weights_dict, dict) and weights_dict:
             wdf = pd.DataFrame(
-                [(nice_name(k), round(float(v)*10, 2), round(float(v)*100, 2)) for k, v in weights_dict.items()],
+                [(criterion_label(k, metadata), round(float(v)*10, 2), round(float(v)*100, 2)) for k, v in weights_dict.items()],
                 columns=["Tiêu chí", "Điểm (1–10)", "Trọng số (%)"]
             ).sort_values("Trọng số (%)", ascending=False).reset_index(drop=True)
 
@@ -1532,6 +1591,7 @@ elif page == "Phân tích Địa điểm (TOPSIS)":
 # Page: What-if
 # =========================
 elif page == "Phân tích Độ nhạy (What-if)":
+    metadata = load_metadata()
     st.header("Trang 5: Phân tích Độ nhạy (What-if)")
 
     # 1) Tải mô hình AHP
@@ -1615,13 +1675,13 @@ elif page == "Phân tích Độ nhạy (What-if)":
 
         for c in model_criteria:
             new_weights[c] = st.slider(
-                nice_name(c), 0.0, 1.0, float(original_weights.get(c, 0.0)), 0.01, key=f"slider_{c}_{selected_model}"
+                criterion_label(c, metadata), 0.0, 1.0, float(original_weights.get(c, 0.0)), 0.01, key=f"slider_{c}_{selected_model}"
             )
 
         if other_criteria:
             st.markdown("**Tiêu chí không sử dụng (trọng số = 0)**")
             df_unused = add_index_col(
-                pd.DataFrame({"Tiêu chí không sử dụng": [nice_name(c) for c in other_criteria]}),
+                pd.DataFrame({"Tiêu chí không sử dụng": [criterion_label(c, metadata) for c in other_criteria]}),
                 "STT"
             )
             display_table(df_unused, bold_first_col=True, fixed_height=240)
