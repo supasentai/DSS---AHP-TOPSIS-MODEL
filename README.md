@@ -1,6 +1,6 @@
-# Hệ thống Hỗ trợ Ra quyết định (DSS): Lựa chọn Địa điểm Kinh doanh tại Quận 7, TP.HCM
+# Hệ thống Hỗ trợ Ra quyết định (DSS): Lựa chọn Địa điểm Kinh doanh tại Việt Nam
 
-Đây là đồ án môn học "Hệ thống Hỗ trợ Ra quyết định (DSS)" tại Đại học Kinh tế TP. Hồ Chí Minh (UEH). Dự án này xây dựng một hệ thống DSS hoàn chỉnh để hỗ trợ các doanh nghiệp đưa ra quyết định lựa chọn địa điểm mở chi nhánh mới (văn phòng, kho xưởng, nhà máy, khác) tại 10 phường thuộc Quận 7, TP.HCM.
+Đây là đồ án môn học "Hệ thống Hỗ trợ Ra quyết định (DSS)" tại Đại học Kinh tế TP. Hồ Chí Minh (UEH). Dự án này xây dựng một hệ thống DSS hoàn chỉnh để hỗ trợ các doanh nghiệp đưa ra quyết định lựa chọn địa điểm mở chi nhánh mới (văn phòng, kho xưởng, nhà máy, khác) tại Việt Nam
 
 **Giảng viên hướng dẫn:** TS. Nguyễn Thành Huy
 
@@ -33,12 +33,11 @@ Hệ thống kết hợp hai phương pháp MCDM phổ biến:
 * **Trực quan hóa Dữ liệu:** Hiển thị kết quả dưới nhiều hình thức:
     * Bảng xếp hạng chi tiết.
     * Biểu đồ Radar (so sánh Top 3).
-    * **Bản đồ nhiệt (Heatmap)** trực quan trên bản đồ Quận 7.
+    * **Bản đồ nhiệt (Heatmap)** trực quan trên bản đồ Việt Nam.
 
 ## Công nghệ sử dụng
 * **Ngôn ngữ:** Python
-* **Giao diện:** Streamlit
-* **Thư viện (chính):** Pandas, NumPy, PyYAML (để quản lý file trọng số `weights.yaml`)
+* **Thư viện (chính):** Pandas, NumPy, PyYAML
 * **Giao diện thay thế:** Hệ thống cũng có một phiên bản CLI (Console Line Interface) để kiểm thử và chạy nhanh.
 ---
 
@@ -51,32 +50,15 @@ Bạn cần có **Python 3.8+** và **Git** đã được cài đặt.
 git clone [https://github.com/supasentai/DSS---AHP-TOPSIS-MODEL.git](https://github.com/supasentai/DSS---AHP-TOPSIS-MODEL.git)
 cd DSS---AHP-TOPSIS-MODEL
 ```
-**2. Tạo và kích hoạt môi trường ảo**
-
-Để tránh xung đột thư viện, bạn nên tạo một môi trường ảo (virtual environment):
-
-```bash
-# Tạo môi trường ảo
-python -m venv venv
-
-# Kích hoạt môi trường
-# Trên Windows
-.\venv\Scripts\activate
-# Trên macOS/Linux
-source venv/bin/activate
-```
-
-**3. Cài đặt các thư viện cần thiết**
+**2. Cài đặt các thư viện cần thiết**
 
 Dự án này sử dụng các thư viện được liệt kê trong file `requirements.txt`. Hãy cài đặt chúng bằng pip:
-
 ```bash
 pip install -r requirements.txt
 ```
-
 *(Giả định file này tồn tại, nếu chưa có, bạn cần tạo file `requirements.txt` với nội dung như `streamlit`, `pandas`, `numpy`, `pyyaml`)*
 
-**4. Khởi chạy ứng dụng**
+**3. Khởi chạy ứng dụng**
 
 Hệ thống có hai phiên bản để khởi chạy:
 
